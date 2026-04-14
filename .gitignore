@@ -1,0 +1,40 @@
+# macOS
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Node / TypeScript
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Azure Functions local settings and emulator data
+backend/functions-ingestion/local.settings.json
+backend/functions-ingestion/.azurite/
+
+# Local tool and editor files
+.vscode/
+.idea/
+
+# Terraform local state
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraform.lock.hcl
