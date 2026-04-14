@@ -1,5 +1,6 @@
 import { app, InvocationContext, output } from "@azure/functions";
 import { upsertDocumentMetadata } from "../shared/documentMetadataStore.js";
+import { isTenantAllowed } from "../shared/tenantPolicy.js";
 
 type ProcessingJobMessage = {
   documentId: string;
@@ -67,6 +68,14 @@ async function blobValidateAndEnqueueHandler(
     contentLength,
     source: "blob-trigger"
   };
+
+  if (!isTenantAllowed(message.tenantId)) {
+    context.warn("Blob path tenant is not allowlisted; skipping queue.", {
+      blobName,
+      tenantId: message.tenantId
+    });
+    return;
+  }
 
   await upsertDocumentMetadata(
     {

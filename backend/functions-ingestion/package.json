@@ -23,8 +23,10 @@
     "@azure/search-documents": "^12.1.0",
     "@azure/storage-blob": "^12.25.0",
     "@azure/storage-queue": "^12.26.0",
+    "jimp": "^1.6.1",
     "openai": "^6.34.0",
-    "pdf-parse": "^1.1.1"
+    "pdf-parse": "^1.1.1",
+    "tesseract.js": "^5.1.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

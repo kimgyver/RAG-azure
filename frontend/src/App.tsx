@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type DocumentStatus =
   | "waiting"
@@ -44,27 +44,6 @@ type ChatResponse = {
   };
 };
 
-const documentQueue: DocumentItem[] = [
-  {
-    id: "doc-001",
-    fileName: "tenant-a-contract.pdf",
-    status: "indexed",
-    updatedAt: "방금 전"
-  },
-  {
-    id: "doc-002",
-    fileName: "invoice-april.png",
-    status: "processing",
-    updatedAt: "2분 전"
-  },
-  {
-    id: "doc-003",
-    fileName: "handbook-2026.pdf",
-    status: "queued",
-    updatedAt: "5분 전"
-  }
-];
-
 type UploadState = "idle" | "requesting-sas" | "uploading" | "done" | "error";
 
 type CreateUploadResponse = {
@@ -89,12 +68,61 @@ type DocumentStatusResponse = {
   updatedAt: string;
 };
 
+type RuntimeConfigSnapshot = {
+  cosmosDbEnabled: boolean;
+  searchEnabled: boolean;
+  embeddingPipelineEnabled: boolean;
+  chatSearchMode: "keyword" | "hybrid" | "vector";
+  ocrEnabled: boolean;
+  openAiChatConfigured: boolean;
+  tenantAllowlistActive: boolean;
+};
+
+function searchModeLabel(mode: RuntimeConfigSnapshot["chatSearchMode"]): string {
+  switch (mode) {
+    case "keyword":
+      return "키워드";
+    case "vector":
+      return "벡터";
+    default:
+      return "하이브리드";
+  }
+}
+
+type CatalogCosmos = {
+  status: string;
+  updatedAt: string;
+  chunkCount?: number;
+  contentType?: string;
+};
+
+type CatalogSearch = {
+  chunkCount: number;
+  fileName: string;
+  blobName: string;
+};
+
+type CatalogDocumentRow = {
+  documentId: string;
+  tenantId: string;
+  fileName: string;
+  blobName: string;
+  cosmos: CatalogCosmos | null;
+  search: CatalogSearch | null;
+};
+
+type CatalogResponse = {
+  tenantId: string;
+  documents: CatalogDocumentRow[];
+  sources: { cosmos: boolean; search: boolean };
+};
+
 const initialChatMessages: ChatMessage[] = [
   {
     id: "assistant-1",
     role: "assistant",
     content:
-      "업로드된 문서를 tenant 범위로 검색해 답변합니다. 먼저 문서를 업로드한 뒤 질문을 입력하세요."
+      "같은 테넌트로 올린 문서만 검색해 답합니다. 먼저 왼쪽에서 업로드한 뒤 질문을 입력하세요."
   }
 ];
 
@@ -133,7 +161,12 @@ function relativeTimeLabel(input: string): string {
 }
 
 function App() {
-  const [documents, setDocuments] = useState<DocumentItem[]>(documentQueue);
+  const defaultTenantId = useMemo(
+    () => (import.meta.env.VITE_TENANT_ID?.trim() || "tenant-a").trim(),
+    []
+  );
+  const [tenantId, setTenantId] = useState<string>(defaultTenantId);
+  const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [chatMessages, setChatMessages] =
     useState<ChatMessage[]>(initialChatMessages);
   const [chatInput, setChatInput] = useState<string>("");
@@ -147,6 +180,18 @@ function App() {
     documentId: string;
     tenantId: string;
   } | null>(null);
+  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfigSnapshot | null>(
+    null
+  );
+  const [runtimeConfigStatus, setRuntimeConfigStatus] = useState<
+    "loading" | "ok" | "error"
+  >("loading");
+  const [catalogRows, setCatalogRows] = useState<CatalogDocumentRow[]>([]);
+  const [catalogStatus, setCatalogStatus] = useState<
+    "idle" | "loading" | "error" | "ok"
+  >("loading");
+  const [catalogMessage, setCatalogMessage] = useState<string>("");
+  const [purgeBusyId, setPurgeBusyId] = useState<string | null>(null);
 
   const uploadApiBaseUrl = useMemo(
     () =>
@@ -158,6 +203,79 @@ function App() {
     () => import.meta.env.VITE_UPLOAD_API_KEY?.trim() ?? "",
     []
   );
+
+  const effectiveTenantId = tenantId.trim() || defaultTenantId;
+
+  const loadCatalog = useCallback(async () => {
+    setCatalogStatus("loading");
+    setCatalogMessage("");
+    try {
+      const response = await fetch(
+        `${uploadApiBaseUrl}/documents/catalog?tenantId=${encodeURIComponent(
+          effectiveTenantId
+        )}`,
+        {
+          headers: {
+            ...(uploadApiKey ? { "x-functions-key": uploadApiKey } : {})
+          }
+        }
+      );
+      const text = await response.text();
+      if (!response.ok) {
+        throw new Error(text || `HTTP ${response.status}`);
+      }
+      const payload = JSON.parse(text) as CatalogResponse;
+      setCatalogRows(payload.documents);
+      setCatalogStatus("ok");
+      setCatalogMessage(
+        `Cosmos ${payload.sources.cosmos ? "ON" : "OFF"} · Search ${
+          payload.sources.search ? "ON" : "OFF"
+        } · ${payload.documents.length}건`
+      );
+    } catch (error) {
+      setCatalogRows([]);
+      setCatalogStatus("error");
+      setCatalogMessage(
+        error instanceof Error ? error.message : "목록을 불러오지 못했습니다."
+      );
+    }
+  }, [effectiveTenantId, uploadApiBaseUrl, uploadApiKey]);
+
+  useEffect(() => {
+    void loadCatalog();
+  }, [loadCatalog]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadRuntime = async () => {
+      setRuntimeConfigStatus("loading");
+      try {
+        const response = await fetch(`${uploadApiBaseUrl}/flags/deployment`, {
+          headers: {
+            ...(uploadApiKey ? { "x-functions-key": uploadApiKey } : {})
+          }
+        });
+        if (!response.ok) {
+          throw new Error(String(response.status));
+        }
+        const payload = (await response.json()) as RuntimeConfigSnapshot;
+        if (!cancelled) {
+          setRuntimeConfig(payload);
+          setRuntimeConfigStatus("ok");
+        }
+      } catch {
+        if (!cancelled) {
+          setRuntimeConfig(null);
+          setRuntimeConfigStatus("error");
+        }
+      }
+    };
+
+    void loadRuntime();
+    return () => {
+      cancelled = true;
+    };
+  }, [uploadApiBaseUrl, uploadApiKey]);
 
   useEffect(() => {
     if (!trackedDocument) {
@@ -265,7 +383,7 @@ function App() {
       fileName: selectedFile.name,
       status: "uploading",
       updatedAt: "방금 전",
-      tenantId: "tenant-a"
+      tenantId: effectiveTenantId
     };
 
     setDocuments(prev => [tempItem, ...prev]);
@@ -281,7 +399,7 @@ function App() {
           ...(uploadApiKey ? { "x-functions-key": uploadApiKey } : {})
         },
         body: JSON.stringify({
-          tenantId: "tenant-a",
+          tenantId: effectiveTenantId,
           fileName: selectedFile.name,
           contentType: selectedFile.type || "application/octet-stream"
         })
@@ -382,7 +500,7 @@ function App() {
           ...(uploadApiKey ? { "x-functions-key": uploadApiKey } : {})
         },
         body: JSON.stringify({
-          tenantId: "tenant-a",
+          tenantId: effectiveTenantId,
           question
         })
       });
@@ -398,7 +516,8 @@ function App() {
         role: "assistant",
         content: payload.answer,
         citations: payload.citations.map(
-          citation => `${citation.fileName} · chunk ${citation.chunkIndex + 1}`
+          citation =>
+            `${citation.fileName} · 청크 ${citation.chunkIndex + 1}`
         )
       };
 
@@ -420,42 +539,122 @@ function App() {
     }
   };
 
+  const handlePurgeDocument = async (documentId: string) => {
+    const confirmed = window.confirm(
+      `문서 ID "${documentId}"\n\n이 테넌트의 AI Search 청크와 Cosmos 메타데이터를 삭제합니다. Blob 원본은 남습니다. 계속할까요?`
+    );
+    if (!confirmed) {
+      return;
+    }
+    setPurgeBusyId(documentId);
+    try {
+      const response = await fetch(
+        `${uploadApiBaseUrl}/documents/${encodeURIComponent(
+          documentId
+        )}/purge?tenantId=${encodeURIComponent(effectiveTenantId)}`,
+        {
+          method: "DELETE",
+          headers: {
+            ...(uploadApiKey ? { "x-functions-key": uploadApiKey } : {})
+          }
+        }
+      );
+      const text = await response.text();
+      if (!response.ok) {
+        throw new Error(text || `HTTP ${response.status}`);
+      }
+      await loadCatalog();
+    } catch (error) {
+      window.alert(
+        error instanceof Error ? error.message : "삭제에 실패했습니다."
+      );
+    } finally {
+      setPurgeBusyId(null);
+    }
+  };
+
   return (
     <div className="app-shell">
       <header className="hero">
         <div>
-          <p className="eyebrow">Azure-native RAG Demo</p>
+          <p className="eyebrow">Azure 네이티브 RAG 데모</p>
           <h1>문서 업로드부터 검색형 챗봇까지 한 화면에서 확인하는 첫 셸</h1>
           <p className="hero-copy">
-            업로드, 큐 처리, 문서 인덱싱, tenant 범위 검색형 채팅까지 로컬에서
-            이어지는 흐름을 확인한다. 다음 단계에서는 Azure OpenAI 생성 답변과
-            하이브리드 검색으로 확장한다.
+            SAS로 Blob에 직접 올리고, 큐로 비동기 처리한 뒤 Azure AI Search로
+            찾고, 설정에 따라 임베딩·하이브리드 검색과 생성형 답변까지
+            이어볼 수 있다. 오른쪽 박스는 실제 Functions 환경 변수와 맞춰
+            갱신된다.{" "}
+            <code className="inline-code">ALLOWED_TENANT_IDS</code>가 비어
+            있으면 아래 테넌트는 자유 입력이고, 값이 있으면 목록에 있는 ID만
+            통과한다.
           </p>
         </div>
         <div className="hero-stats">
-          <div>
-            <span>현재 단계</span>
-            <strong>Step 8</strong>
-          </div>
-          <div>
-            <span>범위</span>
-            <strong>Upload + Index + Search Chat</strong>
-          </div>
-          <div>
-            <span>다음 연결</span>
-            <strong>Azure OpenAI / Hybrid RAG</strong>
-          </div>
+          {runtimeConfigStatus === "loading" ? (
+            <div>
+              <span>백엔드 설정</span>
+              <strong>불러오는 중…</strong>
+            </div>
+          ) : runtimeConfigStatus === "error" || !runtimeConfig ? (
+            <div>
+              <span>백엔드 설정</span>
+              <strong>읽기 실패</strong>
+              <p className="hero-stat-sub">
+                Functions가{" "}
+                <code className="inline-code">VITE_UPLOAD_API_BASE_URL</code>에
+                떠 있는지, 주소가 맞는지 확인하세요. 업로드·챗은 별도로{" "}
+                <code className="inline-code">VITE_UPLOAD_API_KEY</code>가
+                필요할 수 있습니다.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div>
+                <span>Cosmos · 문서 상태</span>
+                <strong>{runtimeConfig.cosmosDbEnabled ? "켜짐" : "꺼짐"}</strong>
+                <p className="hero-stat-sub">
+                  {runtimeConfig.tenantAllowlistActive
+                    ? "허용 테넌트만 처리 (ALLOWED_TENANT_IDS)"
+                    : "테넌트 제한 없음 · 로컬 기본"}
+                </p>
+              </div>
+              <div>
+                <span>AI Search · 인덱싱</span>
+                <strong>{runtimeConfig.searchEnabled ? "켜짐" : "꺼짐"}</strong>
+                <p className="hero-stat-sub">
+                  임베딩{" "}
+                  {runtimeConfig.embeddingPipelineEnabled ? "사용" : "미사용"} ·
+                  챗 {searchModeLabel(runtimeConfig.chatSearchMode)} · 이미지 OCR{" "}
+                  {runtimeConfig.ocrEnabled ? "사용" : "꺼짐"}
+                </p>
+              </div>
+              <div>
+                <span>챗 답변</span>
+                <strong>
+                  {runtimeConfig.openAiChatConfigured
+                    ? "생성형"
+                    : "검색 요약만"}
+                </strong>
+                <p className="hero-stat-sub">
+                  {runtimeConfig.openAiChatConfigured
+                    ? "OPENAI_API_KEY 가 있어 GPT로 생성"
+                    : "OPENAI_API_KEY 없음 — 인덱스 스니펫 위주"}
+                </p>
+              </div>
+            </>
+          )}
         </div>
       </header>
 
-      <main className="workspace-grid">
+      <main className="main-stack">
+        <div className="workspace-grid">
         <section className="panel panel-upload">
           <div className="panel-header">
             <div>
-              <p className="panel-kicker">Upload</p>
+              <p className="panel-kicker">업로드</p>
               <h2>문서 업로드</h2>
             </div>
-            <span className="panel-tag">SAS direct upload 연결됨</span>
+            <span className="panel-tag">SAS 직접 업로드</span>
           </div>
 
           <label className="dropzone" htmlFor="file-upload">
@@ -464,8 +663,27 @@ function App() {
             <strong>PDF, PNG, JPG 문서를 선택</strong>
             <p>
               업로드 버튼을 누르면 SAS URL을 발급받은 뒤 브라우저에서 Blob
-              Storage로 직접 업로드한다
+              Storage로 직접 업로드한다. PNG·JPEG 등은 서버에서 OCR로 텍스트를
+              뽑을 수 있다.
             </p>
+          </label>
+
+          <label className="tenant-field" htmlFor="tenant-id">
+            <span>테넌트 ID</span>
+            <input
+              id="tenant-id"
+              type="text"
+              value={tenantId}
+              onChange={event => setTenantId(event.target.value)}
+              placeholder={defaultTenantId}
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <small>
+              비우면 <strong>{defaultTenantId}</strong>가 쓰이며, 그 값은{" "}
+              <code className="inline-code">VITE_TENANT_ID</code>(없으면 위
+              기본)에서 온다.
+            </small>
           </label>
 
           <div className="upload-actions">
@@ -479,16 +697,16 @@ function App() {
 
           <div className="upload-meta-grid">
             <div className="meta-card">
-              <span>Tenant</span>
-              <strong>tenant-a</strong>
+              <span>적용 테넌트</span>
+              <strong>{effectiveTenantId}</strong>
             </div>
             <div className="meta-card">
-              <span>Storage path</span>
-              <strong>tenant-a/2026/04/</strong>
+              <span>Blob 경로 접두</span>
+              <strong>{effectiveTenantId}/YYYY/MM/</strong>
             </div>
             <div className="meta-card">
-              <span>Next API</span>
-              <strong>{uploadApiBaseUrl}/uploads/create</strong>
+              <span>API 베이스 URL</span>
+              <strong>{uploadApiBaseUrl}</strong>
             </div>
           </div>
 
@@ -517,10 +735,10 @@ function App() {
         <section className="panel panel-chat">
           <div className="panel-header">
             <div>
-              <p className="panel-kicker">Chat</p>
+              <p className="panel-kicker">채팅</p>
               <h2>RAG 챗봇</h2>
             </div>
-            <span className="panel-tag">Tenant-filtered retrieval</span>
+            <span className="panel-tag">테넌트 단위 검색</span>
           </div>
 
           <div className="chat-stream">
@@ -530,7 +748,7 @@ function App() {
                 className={`message message-${message.role}`}
               >
                 <span className="message-role">
-                  {message.role === "user" ? "User" : "Assistant"}
+                  {message.role === "user" ? "사용자" : "어시스턴트"}
                 </span>
                 <p>{message.content}</p>
                 {message.citations?.length ? (
@@ -560,14 +778,108 @@ function App() {
             />
             <div className="composer-actions">
               <div className="composer-hint">
-                현재 응답은 Azure AI Search 검색 결과를 요약해 보여준다. 다음
-                단계에서 Azure OpenAI 생성 답변과 대화 이력을 연결한다.
+                답은 먼저 Search로 근거 청크를 고른 뒤 만들어진다. 생성형 여부는
+                위쪽「챗 답변」칸과 같다.
               </div>
               <button type="submit" disabled={chatPending || !chatInput.trim()}>
                 {chatPending ? "질문 처리 중..." : "질문 보내기"}
               </button>
             </div>
           </form>
+        </section>
+        </div>
+
+        <section className="panel catalog-panel" aria-labelledby="catalog-heading">
+          <div className="panel-header">
+            <div>
+              <p className="panel-kicker">관리</p>
+              <h2 id="catalog-heading">Cosmos · Search 문서 목록</h2>
+            </div>
+            <div className="catalog-actions">
+              <button type="button" onClick={() => void loadCatalog()}>
+                목록 새로고침
+              </button>
+            </div>
+          </div>
+          <p
+            className={`catalog-meta ${
+              catalogStatus === "error" ? "catalog-error" : ""
+            } ${catalogStatus === "ok" ? "catalog-ok" : ""}`}
+          >
+            {catalogStatus === "loading"
+              ? "목록을 불러오는 중…"
+              : catalogMessage || "현재 테넌트 기준으로 병합된 문서 행입니다."}
+          </p>
+          <div className="catalog-table-wrap">
+            <table className="catalog-table">
+              <thead>
+                <tr>
+                  <th scope="col">documentId</th>
+                  <th scope="col">파일</th>
+                  <th scope="col">Cosmos</th>
+                  <th scope="col">Search 청크</th>
+                  <th scope="col">삭제</th>
+                </tr>
+              </thead>
+              <tbody>
+                {catalogRows.length === 0 && catalogStatus === "ok" ? (
+                  <tr>
+                    <td colSpan={5} className="catalog-empty">
+                      표시할 문서가 없습니다. 업로드하거나 다른 테넌트를
+                      선택해 보세요.
+                    </td>
+                  </tr>
+                ) : null}
+                {catalogRows.map(row => (
+                  <tr key={row.documentId}>
+                    <td className="mono">{row.documentId}</td>
+                    <td>{row.fileName}</td>
+                    <td>
+                      {row.cosmos ? (
+                        <>
+                          {row.cosmos.status}
+                          <br />
+                          <small className="catalog-sub">
+                            {row.cosmos.chunkCount != null
+                              ? `청크 ${row.cosmos.chunkCount} · `
+                              : ""}
+                            {row.cosmos.updatedAt?.slice(0, 19) ?? ""}
+                          </small>
+                        </>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    <td>
+                      {row.search ? (
+                        <>{row.search.chunkCount}개</>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn-danger"
+                        disabled={
+                          purgeBusyId !== null || (!row.cosmos && !row.search)
+                        }
+                        onClick={() => void handlePurgeDocument(row.documentId)}
+                      >
+                        {purgeBusyId === row.documentId
+                          ? "삭제 중…"
+                          : "데이터 삭제"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="catalog-footnote">
+            삭제 시 AI Search 청크와 Cosmos 메타데이터만 제거합니다. Blob
+            원본은 그대로입니다.
+          </p>
         </section>
       </main>
     </div>

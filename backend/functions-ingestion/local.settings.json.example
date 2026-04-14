@@ -30,6 +30,11 @@
     "AZURE_OPENAI_API_VERSION": "2024-02-01",
     "AZURE_OPENAI_EMBEDDING_DEPLOYMENT": "text-embedding-3-small",
     "OPENAI_EMBEDDING_MODEL": "text-embedding-3-small",
-    "EMBEDDING_DIMENSIONS": "1536"
+    "EMBEDDING_DIMENSIONS": "1536",
+    "ALLOWED_TENANT_IDS": "",
+    "OCR_ENABLED": "true",
+    "OCR_LANGS": "eng",
+    "OCR_MAX_IMAGE_BYTES": "12582912",
+    "OCR_MAX_EDGE_PX": "2000"
   }
 }

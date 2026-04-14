@@ -314,3 +314,126 @@ export async function searchChunkDocuments(
 export function searchEnabled(): boolean {
   return isSearchEnabled();
 }
+
+export type SearchDocumentGroup = {
+  documentId: string;
+  fileName: string;
+  blobName: string;
+  chunkCount: number;
+};
+
+/**
+ * Tenant 파티션 내 청크를 스캔해 documentId 기준으로 묶는다(데모·관리용, 상한 있음).
+ */
+export async function listSearchDocumentGroups(
+  tenantId: string,
+  maxChunksToScan = 4000
+): Promise<SearchDocumentGroup[]> {
+  if (!isSearchEnabled()) {
+    return [];
+  }
+
+  await ensureIndex();
+  const client = getSearchClient();
+  const filter = `tenantId eq '${escapeODataStringLiteral(tenantId)}'`;
+  const byDoc = new Map<
+    string,
+    { fileName: string; blobName: string; count: number }
+  >();
+
+  let scanned = 0;
+  let skip = 0;
+  const pageSize = 1000;
+
+  while (scanned < maxChunksToScan) {
+    const take = Math.min(pageSize, maxChunksToScan - scanned);
+    const response = await client.search("*", {
+      filter,
+      top: take,
+      skip,
+      select: ["documentId", "fileName", "blobName"]
+    });
+
+    let pageHits = 0;
+    for await (const result of response.results) {
+      pageHits += 1;
+      scanned += 1;
+      const doc = result.document;
+      const did = doc.documentId?.trim();
+      if (!did) {
+        continue;
+      }
+      const existing = byDoc.get(did);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        byDoc.set(did, {
+          fileName: doc.fileName ?? "",
+          blobName: doc.blobName ?? "",
+          count: 1
+        });
+      }
+    }
+
+    if (pageHits === 0) {
+      break;
+    }
+    skip += pageHits;
+    if (pageHits < take) {
+      break;
+    }
+  }
+
+  return [...byDoc.entries()].map(([documentId, v]) => ({
+    documentId,
+    fileName: v.fileName,
+    blobName: v.blobName,
+    chunkCount: v.count
+  }));
+}
+
+/**
+ * 해당 문서의 모든 청크를 인덱스에서 제거한다. 삭제된 청크 개수를 반환한다.
+ */
+export async function deleteSearchChunksForDocument(
+  documentId: string,
+  tenantId: string
+): Promise<number> {
+  if (!isSearchEnabled()) {
+    return 0;
+  }
+
+  await ensureIndex();
+  const client = getSearchClient();
+  const filter = `tenantId eq '${escapeODataStringLiteral(tenantId)}' and documentId eq '${escapeODataStringLiteral(documentId)}'`;
+
+  let totalDeleted = 0;
+  const batchSize = 500;
+
+  for (;;) {
+    const response = await client.search("*", {
+      filter,
+      top: batchSize,
+      select: ["id"]
+    });
+
+    const ids: { id: string }[] = [];
+    for await (const result of response.results) {
+      if (result.document.id) {
+        ids.push({ id: result.document.id });
+      }
+    }
+
+    if (ids.length === 0) {
+      break;
+    }
+
+    await client.deleteDocuments(ids as ChunkSearchDocument[]);
+    totalDeleted += ids.length;
+    if (ids.length < batchSize) {
+      break;
+    }
+  }
+
+  return totalDeleted;
+}

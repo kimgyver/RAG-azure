@@ -8,6 +8,10 @@ import {
   cosmosEnabled,
   getDocumentMetadata
 } from "../shared/documentMetadataStore.js";
+import {
+  isTenantAllowed,
+  tenantNotAllowedMessage
+} from "../shared/tenantPolicy.js";
 
 function badRequest(message: string): HttpResponseInit {
   return {
@@ -29,6 +33,13 @@ async function getDocumentStatusHandler(
 
   if (!tenantId) {
     return badRequest("tenantId is required.");
+  }
+
+  if (!isTenantAllowed(tenantId)) {
+    return {
+      status: 403,
+      jsonBody: { message: tenantNotAllowedMessage() }
+    };
   }
 
   if (!cosmosEnabled()) {

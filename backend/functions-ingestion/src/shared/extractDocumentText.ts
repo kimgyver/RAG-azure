@@ -1,8 +1,9 @@
 import pdfParse from "pdf-parse";
+import { ocrImageBuffer } from "./ocrImage.js";
 
 export type ExtractedDocumentText = {
   text: string;
-  sourceType: "text" | "pdf";
+  sourceType: "text" | "pdf" | "image-ocr";
 };
 
 function normalizeText(input: string): string {
@@ -35,6 +36,26 @@ function isPdfBlob(blobName: string, contentType?: string): boolean {
   return lowerType === "application/pdf" || lowerName.endsWith(".pdf");
 }
 
+function isImageBlob(blobName: string, contentType?: string): boolean {
+  const lowerType = contentType?.toLowerCase() ?? "";
+  if (
+    lowerType.startsWith("image/") &&
+    !lowerType.includes("svg") &&
+    lowerType !== "image/heic"
+  ) {
+    return true;
+  }
+
+  const lowerName = blobName.toLowerCase();
+  return (
+    lowerName.endsWith(".png") ||
+    lowerName.endsWith(".jpg") ||
+    lowerName.endsWith(".jpeg") ||
+    lowerName.endsWith(".webp") ||
+    lowerName.endsWith(".gif")
+  );
+}
+
 export async function extractDocumentText(
   blobName: string,
   contentType: string | undefined,
@@ -53,6 +74,17 @@ export async function extractDocumentText(
       text: normalizeText(result.text ?? ""),
       sourceType: "pdf"
     };
+  }
+
+  if (isImageBlob(blobName, contentType)) {
+    const ocrText = await ocrImageBuffer(content);
+    if (ocrText) {
+      return {
+        text: normalizeText(ocrText),
+        sourceType: "image-ocr"
+      };
+    }
+    return null;
   }
 
   return null;

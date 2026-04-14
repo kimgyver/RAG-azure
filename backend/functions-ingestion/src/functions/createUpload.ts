@@ -6,6 +6,10 @@ import {
 } from "@azure/functions";
 import { randomUUID } from "node:crypto";
 import { createUploadSasUrl, sanitizeFileName } from "../shared/sas.js";
+import {
+  isTenantAllowed,
+  tenantNotAllowedMessage
+} from "../shared/tenantPolicy.js";
 
 type CreateUploadRequest = {
   tenantId?: string;
@@ -47,6 +51,13 @@ async function createUploadHandler(
 
     if (!tenantId) {
       return badRequest("tenantId is required.");
+    }
+
+    if (!isTenantAllowed(tenantId)) {
+      return {
+        status: 403,
+        jsonBody: { message: tenantNotAllowedMessage() }
+      };
     }
 
     if (!fileName) {

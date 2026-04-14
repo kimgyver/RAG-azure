@@ -8,6 +8,7 @@ import {
 } from "../shared/embeddingStore.js";
 import { extractDocumentText } from "../shared/extractDocumentText.js";
 import { indexChunkDocuments } from "../shared/searchIndexStore.js";
+import { isTenantAllowed } from "../shared/tenantPolicy.js";
 
 type ProcessingJobMessage = {
   documentId?: string;
@@ -67,6 +68,14 @@ async function processQueuedDocumentHandler(
     source: message.source
   });
 
+  if (message.tenantId && !isTenantAllowed(message.tenantId)) {
+    context.warn("Skipping job for tenantId not in allowlist.", {
+      tenantId: message.tenantId,
+      blobName
+    });
+    return;
+  }
+
   if (message.documentId && message.tenantId) {
     await upsertDocumentMetadata(
       {
@@ -115,7 +124,7 @@ async function processQueuedDocumentHandler(
         );
       }
 
-      context.log("Skipping non-text blob in Step 6 MVP.", {
+      context.log("Skipping unsupported blob (no text/PDF layer or OCR text).", {
         blobName,
         contentType
       });
@@ -200,8 +209,6 @@ async function processQueuedDocumentHandler(
       indexed,
       firstChunkPreview: chunks[0]?.content.slice(0, 120) ?? ""
     });
-
-    // 다음 단계: chunk별 임베딩 생성 후 AI Search에 저장
   } catch (error) {
     if (message.documentId && message.tenantId) {
       await upsertDocumentMetadata(

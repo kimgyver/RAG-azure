@@ -139,3 +139,59 @@ export async function getDocumentMetadata(
 
   return resource ?? null;
 }
+
+export async function listDocumentsByTenant(
+  tenantId: string,
+  maxItems = 200
+): Promise<DocumentMetadataRecord[]> {
+  if (!isCosmosEnabled()) {
+    return [];
+  }
+
+  const container = await getContainer();
+  const { resources } = await container.items
+    .query<DocumentMetadataRecord>(
+      { query: "SELECT * FROM c" },
+      { partitionKey: tenantId }
+    )
+    .fetchAll();
+
+  const sorted = [...resources].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  );
+  return sorted.slice(0, maxItems);
+}
+
+export async function deleteDocumentMetadata(
+  documentId: string,
+  tenantId: string
+): Promise<boolean> {
+  if (!isCosmosEnabled()) {
+    return false;
+  }
+
+  const container = await getContainer();
+  try {
+    await container.item(documentId, tenantId).delete();
+    return true;
+  } catch (error: unknown) {
+    const code =
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      typeof (error as { code: unknown }).code === "number"
+        ? (error as { code: number }).code
+        : undefined;
+    const statusCode =
+      error &&
+      typeof error === "object" &&
+      "statusCode" in error &&
+      typeof (error as { statusCode: unknown }).statusCode === "number"
+        ? (error as { statusCode: number }).statusCode
+        : undefined;
+    if (code === 404 || statusCode === 404) {
+      return false;
+    }
+    throw error;
+  }
+}

@@ -16,6 +16,10 @@ import {
   searchChunkDocuments,
   searchEnabled
 } from "../shared/searchIndexStore.js";
+import {
+  isTenantAllowed,
+  tenantNotAllowedMessage
+} from "../shared/tenantPolicy.js";
 
 type ChatRequest = {
   tenantId?: string;
@@ -170,6 +174,13 @@ async function chatHandler(
 
   if (!tenantId) {
     return badRequest("tenantId is required.");
+  }
+
+  if (!isTenantAllowed(tenantId)) {
+    return {
+      status: 403,
+      jsonBody: { message: tenantNotAllowedMessage() }
+    };
   }
 
   if (!question) {
