@@ -16,7 +16,7 @@ flowchart TB
   subgraph Frontend
       A[End User / Browser]
       B[React Chat UI - Vite/Static Hosting]
-      A --> B
+        A -->|Upload / User Query| B
   end
   class A,B frontend;
 
@@ -38,9 +38,9 @@ flowchart TB
 • chunk
 • embedding
 • index/update metadata]
-      B --> C
-      C --> D
-      C --> E
+      B -->|API request| C
+      C -->|User Query flow| D
+      C -->|Upload flow| E
       F --> G
   end
   class C,D,E,F,G backend;
@@ -64,34 +64,37 @@ rag-chunks index/vector]
   end
   class L external;
 
-  %% Ops / governance
-  subgraph OpsGovernance
-      M[Application Insights]
-      N[Budget Alerts 10/20 NZD]
-      O[Search On/Off Scripts]
-  end
-  class M,N,O ops;
 
-  %% Main flows
-  E --> H
-  H --> F
-  F --> I
-  I --> G
-  G --> J
-  G --> K
-  D --> K
-  D --> J
-  D --> L
+%% OpsGovernance는 실제 운영/비용/모니터링 담당 컴포넌트로, 다이어그램 하단에 별도 표기(메인 플로우와 연결선 없음)
+
+%% --------------------
+%% OpsGovernance (아래쪽에 별도 박스, 링크 없음, Mermaid 파싱 호환)
+subgraph OpsGovernance
+      direction TB
+      LabelOps["OpsGovernance (운영/비용/모니터링)"]
+      O[Search On/Off Scripts]
+      N[Budget Alerts 10/20 NZD]
+      M[Application Insights]
+end
+class M,N,O ops;
+
+  %% Main flows: Upload
+  E -->|Issue SAS| H
+  H -->|Blob created event| F
+  F -->|Enqueue processing| I
+  I -->|Dequeue job| G
+  G -->|Update metadata| J
+  G -->|Index chunks/vectors| K
+
+  %% Main flows: User query
+  D -->|Retrieve context| K
+  D -->|Read document state| J
+  D -->|Generate answer| L
   L --> D
   D --> C
   C --> B
 
-  %% Ops links
-  C --> M
-  D --> M
-  G --> M
-  O --> K
-  N -. monitors cost .-> K
+      %% (운영/비용/모니터링은 별도 관리, 메인 플로우와 연결선 없음)
 ```
 
 ## 컴포넌트 매핑
