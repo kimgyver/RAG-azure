@@ -4,6 +4,8 @@
 
 파이프라인의 의미와 Azure 서비스 역할은 [architecture.md](./architecture.md)를 참고한다.
 
+**Azure에 이미 배포한 Function App**을 쓸 때: Terraform 기본값은 Search·Cosmos가 **꺼져** 있어 `GET /api/documents/catalog`이 **503**일 수 있다. 기존 AI Search(또는 Cosmos)를 앱 설정에 연결하는 절차는 [deployment-azure.md §4](./deployment-azure.md#4-optional-backends-azure-ai-search-cosmos-db-openai)를 본다. 배포 후 **404**가 나면 [deployment-azure.md — publish와 `dist/`](./deployment-azure.md#function-routes-return-404-after-publish)를 본다. 배포 전체 체크리스트는 [§5 Post-deploy checklist](./deployment-azure.md#5-post-deploy-checklist)이다.
+
 ## 환경 플래그 빠른 참고
 
 | 변수 | 기본 | 의미 |
@@ -42,8 +44,18 @@
 `AzureWebJobsStorage` 가 가리키는 **같은 스토리지**에 대해 **Functions 호스트가 두 개 이상** 떠 있거나, 이전 프로세스가 비정상 종료되면 Blob **싱글톤 잠금(리스)** 이 깨지며 409가 나고 호스트가 종료될 수 있다.
 
 - **한 번에 `func start` / `npm run start` 는 하나만** 띄운다. 다른 터미널·VS Code 디버그 세션도 같은 앱이면 끈다.
-- Azurite를 쓰면 **Azurite를 재시작**하거나, 로컬 전용으로 `UseDevelopmentStorage=true` 만 쓰는지 확인한다.
 - 클라우드 스토리지 계정을 여러 로컬 세션이 공유하지 않도록 한다.
+
+## 로컬 개발: Azure Storage만 쓰기 (Azurite 없음)
+
+이 레포는 **로컬 Functions도 클라우드의 Storage·Service Bus**를 가리키는 흐름을 기본으로 한다.
+
+1. **스토리지 계정** 하나 준비. `AzureWebJobsStorage`와 문서 Blob(`AZURE_STORAGE_*`)에 **같은 계정**을 쓰는 것이 가장 단순하다(Blob 트리거 경로 `uploads/{name}`와 SAS 업로드 컨테이너가 일치).
+2. `local.settings.json.example`을 복사해 `local.settings.json`을 만들고, 예시의 `YOUR_*` 자리를 실제 연결 문자열·키로 바꾼다.
+3. Blob 컨테이너만 자동 생성: `cd backend/functions-ingestion && npm run storage:setup`  
+   **Service Bus 큐**(`AZURE_PROCESSING_QUEUE_NAME`, 기본 `processing-jobs`)는 포털에서 네임스페이스에 만들어 둔다.
+4. **브라우저에서 SAS로 Blob에 PUT**할 때는 스토리지 계정 **CORS**에 Vite 출처(예: `http://localhost:5173`)와 메서드 `PUT` 등을 허용한다. (Azurite 때처럼 Vite 프록시에 의존하지 않아도 된다.)
+5. `vite.config.ts`의 `/devstoreaccount1` 프록시는 **에뮬레이터 URL을 쓸 때만** 의미가 있다. 클라우드 Blob URL만 쓰면 프록시는 타지 않는다.
 
 ## 권장 구현 순서
 
@@ -107,12 +119,13 @@ cp local.settings.json.example local.settings.json
 
 (위 `cp`는 **파일이 없을 때만** 실행한다.)
 
-2. `local.settings.json`에서 아래 항목 값 입력
+2. `local.settings.json`에서 아래 항목 값 입력(클라우드 Storage·Service Bus)
 
-- `AZURE_STORAGE_ACCOUNT_NAME`
-- `AZURE_STORAGE_ACCOUNT_KEY`
-- `AZURE_STORAGE_CONTAINER_NAME`
-- `SAS_EXPIRY_MINUTES`
+- `AzureWebJobsStorage` — 스토리지 계정 연결 문자열(Blob 트리거·호스트용)
+- `AZURE_STORAGE_ACCOUNT_NAME` / `AZURE_STORAGE_ACCOUNT_KEY` / `AZURE_STORAGE_BLOB_ENDPOINT` — SAS 발급·다운로드용(보통 위와 동일 계정)
+- `AZURE_STORAGE_CONTAINER_NAME` — 기본 `uploads`
+- `SERVICE_BUS_CONNECTION` — Service Bus 연결 문자열
+- `SAS_EXPIRY_MINUTES` 등 나머지는 예시 파일 참고
 
 3. 함수 앱 실행
 
@@ -143,14 +156,14 @@ npm run dev
 
 - 프론트엔드에서 `POST /api/uploads/create` 호출 후 SAS URL 획득
 - 브라우저에서 Blob Storage로 `PUT` direct upload 연결 완료
-- 로컬 개발 환경에서 Vite proxy를 통해 Azurite 업로드 검증 완료
+- 브라우저는 SAS URL로 Blob Storage에 직접 `PUT`한다(클라우드 계정이면 스토리지 CORS 설정 필요)
 
 ### Step 4: Blob Trigger 검증
 
 Blob이 생성되면:
 
 - 메타데이터 검증
-- Cosmos DB에 초기 레코드 저장
+- `COSMOS_DB_ENABLED=true`일 때 Cosmos DB에 초기 레코드 저장(꺼져 있으면 이 단계는 생략)
 - 처리 메시지를 큐에 등록
 
 현재 구현 상태:
@@ -158,8 +171,8 @@ Blob이 생성되면:
 - `blob-validate-and-enqueue` Blob Trigger 함수 추가
 - 업로드 파일 크기 검증(`MAX_UPLOAD_SIZE_MB`) 추가
 - 검증 통과 시 Azure Service Bus `processing-jobs` 큐로 처리 메시지 등록
-- 로컬 Azurite 환경에서는 `BLOB_TRIGGER_SOURCE=LogsAndContainerScan`으로 동작
-- 클라우드 배포 시 `SERVICE_BUS_CONNECTION` 환경 변수에 Service Bus 연결 문자열 설정 필요
+- 로컬·클라우드 모두 `BLOB_TRIGGER_SOURCE=LogsAndContainerScan`(기본)으로 Blob 스캔 기반 트리거를 쓸 수 있다
+- `SERVICE_BUS_CONNECTION`에 Service Bus 연결 문자열, 네임스페이스에 처리 큐가 있어야 한다
 
 ### Step 5: 처리 워커
 
@@ -250,13 +263,15 @@ tenant 필터 기반 하이브리드 검색과 답변 생성을 구현한다.
 
 ### Step 9: Terraform 정리
 
-서비스 경계가 안정되면 인프라를 코드로 옮긴다.
+서비스 경계가 안정되면 인프라를 코드로 옮긴다. 이 레포에는 `infra/`에 Azure 스택(Resource Group, Storage, Service Bus, Linux Function App, Application Insights)용 Terraform이 있다. **Cosmos / AI Search / OpenAI 리소스는 Terraform이 기본 생성하지 않으며**, Function 앱 설정도 꺼 둔다 — 클라우드에서 Search·챗·카탈로그를 쓰려면 [deployment-azure.md §4](./deployment-azure.md#4-optional-backends-azure-ai-search-cosmos-db-openai)대로 연결한다.
+
+코드 배포: `backend/functions-ingestion`에서 **`npm run build` 후** `func azure functionapp publish …` ([publish / `dist` / 404](./deployment-azure.md#function-routes-return-404-after-publish)). 전체 순서·체크리스트는 [deployment-azure.md](./deployment-azure.md) 본문과 [Post-deploy checklist](./deployment-azure.md#5-post-deploy-checklist)를 본다.
 
 ### Step 10: 관측성과 안정성 보강
 
 다음을 추가한다.
 
-- Application Insights
+- Application Insights(Terraform 배포 시 Function App에 연결됨 — 포털에서 쿼리·Live Metrics; 자세한 배포 메모는 [deployment-azure.md §5](./deployment-azure.md#5-post-deploy-checklist))
 - correlation ID
 - 재시도 정책
 - DLQ 처리

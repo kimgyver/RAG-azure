@@ -18,6 +18,8 @@ pnpm-debug.log*
 # Node / TypeScript
 node_modules/
 dist/
+# func azure functionapp publish respects .gitignore — must ship compiled JS
+!backend/functions-ingestion/dist/
 *.tsbuildinfo
 
 # Azure Functions local settings and emulator data
@@ -37,4 +39,6 @@ override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
-.terraform.lock.hcl
+
+# Terraform variable files with secrets
+infra/terraform.tfvars

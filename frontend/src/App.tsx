@@ -228,7 +228,16 @@ function App() {
       );
       const text = await response.text();
       if (!response.ok) {
-        throw new Error(text || `HTTP ${response.status}`);
+        let detail = text || `HTTP ${response.status}`;
+        try {
+          const errBody = JSON.parse(text) as { message?: string };
+          if (typeof errBody?.message === "string" && errBody.message) {
+            detail = errBody.message;
+          }
+        } catch {
+          /* keep detail */
+        }
+        throw new Error(detail);
       }
       const payload = JSON.parse(text) as CatalogResponse;
       setCatalogRows(payload.documents);
@@ -423,7 +432,7 @@ function App() {
       setUploadState("uploading");
       setUploadMessage("Uploading directly to Blob Storage...");
 
-      // Dev: use Vite proxy for Azurite (relative path) to avoid CORS on blob PUT
+      // Dev only: if SAS URL targets storage emulator, use Vite proxy path to avoid CORS
       const effectiveUploadUrl =
         import.meta.env.DEV && sasPayload.uploadUrl.includes("127.0.0.1:10000")
           ? (() => {

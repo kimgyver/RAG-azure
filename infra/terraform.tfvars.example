@@ -1,0 +1,40 @@
+# This repo does NOT ship terraform.tfvars (secrets + machine-specific).
+# Create it yourself — same folder as this file, name exactly: terraform.tfvars
+#
+#   cd infra && cp terraform.tfvars.example terraform.tfvars
+#   # then uncomment/edit lines you need
+#
+# Copy to terraform.tfvars (gitignored).
+#
+# --- REQUIRED when Azure returns "Basic VMs: 0" / "Dynamic VMs: 0" on plan create ---
+# Point to an EXISTING Linux App Service plan in THIS subscription (Portal → plan → Resource ID):
+# existing_linux_service_plan_resource_id = "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Web/serverFarms/<planName>"
+#
+# location   = "eastus"
+# project_name = "ragdemo"
+# app_service_plan_sku = "Y1"   # only if Terraform creates the plan AND you have Consumption quota
+# blob_cors_origins = ["http://localhost:5173", "https://your-frontend.azurestaticapps.net"]
+#
+# --- Optional: merge into Function App settings (overrides defaults in main.tf) ---
+# Do NOT commit real secrets. Use Portal Configuration instead if you prefer.
+#
+# extra_app_settings = {
+#   # --- Azure AI Search (existing service is fine; no need to create a second one) ---
+#   SEARCH_ENABLED   = "true"
+#   SEARCH_ENDPOINT  = "https://<your-search-service>.search.windows.net"
+#   SEARCH_API_KEY   = "<admin-key-from-portal-keys-blade>"
+#   # SEARCH_INDEX_NAME = "rag-chunks"   # omit unless you use a non-default index name
+#
+#   # --- Cosmos DB metadata (optional; catalog merges Cosmos + Search when both on) ---
+#   # COSMOS_DB_ENABLED = "true"
+#   # COSMOS_ENDPOINT   = "https://<account>.documents.azure.com:443/"
+#   # COSMOS_KEY        = "<key>"
+#
+#   # --- OpenAI / Azure OpenAI (chat, embeddings when EMBEDDING_ENABLED=true) ---
+#   # OPENAI_API_KEY = "sk-..."
+#   # AZURE_OPENAI_ENDPOINT = "https://<resource>.openai.azure.com/"
+#   # AZURE_OPENAI_API_KEY    = "..."
+#
+#   # --- Production-style tenant lockdown (comma-separated) ---
+#   # ALLOWED_TENANT_IDS = "tenant-a,tenant-b"
+# }

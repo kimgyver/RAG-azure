@@ -149,32 +149,30 @@ Terraform은 쓰는 게 맞지만, 가장 처음 할 일은 아니다.
 
 앱 코드와 Terraform은 같은 리포지터리에 두되, 디렉터리로 분리한다.
 
-## 권장 리포지터리 구조
+## 리포지터리 구조 (현재 vs 확장 시)
+
+**현재 이 레포의 실제 구조:**
+
+```text
+/infra              Terraform (RG, Storage, Service Bus, Linux Function App, Application Insights)
+/frontend           React + Vite SPA
+/backend/functions-ingestion   Azure Functions: SAS 업로드, Blob/Queue 트리거, 문서 처리, 챗·카탈로그 HTTP
+/docs               architecture, development, deployment-azure, design, security
+```
+
+- 챗·검색 HTTP는 **`functions-ingestion` 안**에 있다(`POST /api/chat` 등).
+- 공용 타입·유틸은 주로 `backend/functions-ingestion/src/shared/` 아래에 있다.
+
+**나중에 워커와 API를 나누고 싶을 때의 목표 구조 예시:**
 
 ```text
 /infra
-  /modules
-  /environments
-    /dev
-    /prod
-/frontend
-/backend
-  /functions-ingestion
-  /functions-chat
-/shared
+/backend/functions-ingestion   # ingestion + queue worker만
+/backend/functions-chat        # chat / search 전용 HTTP (또는 Web App)
 /docs
 ```
 
-### 각 폴더의 역할
-
-- `infra`: Azure 리소스용 Terraform
-- `frontend`: React 앱
-- `backend/functions-ingestion`: upload, blob trigger, queue trigger
-- `backend/functions-chat`: chat 및 search HTTP API
-- `shared`: DTO와 공용 타입
-- `docs`: 아키텍처 메모와 의사결정 기록
-
-현재 이 레포에서는 `backend/functions-chat` 대신 `functions-ingestion`에 챗 HTTP까지 포함한 형태로 진행 중일 수 있다. 분리할 때는 위 구조를 목표로 옮기면 된다.
+분리할 때는 위처럼 경계를 나누면 된다.
 
 ## MVP 범위
 
@@ -188,9 +186,9 @@ Terraform은 쓰는 게 맞지만, 가장 처음 할 일은 아니다.
 - Blob Trigger에서 업로드 검증
 - Service Bus에 처리 작업 등록
 - 우선 한 가지 파일 타입만 텍스트 추출
-- 텍스트 청킹 및 임베딩 생성
-- 청크를 Azure AI Search에 인덱싱
-- 문서 상태를 Cosmos DB에 저장
+- 텍스트 청킹 및 임베딩 생성(임베딩은 설정·키가 있을 때)
+- 청크를 Azure AI Search에 인덱싱(`SEARCH_ENABLED`)
+- 문서 상태를 Cosmos DB에 저장(`COSMOS_DB_ENABLED`)
 - tenant 필터 기반으로 청크 검색 후 질문 응답
 - citations가 포함된 grounded answer 반환
 

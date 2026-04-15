@@ -3,13 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "dist/src/*.js",
+  "main": "dist/src/app.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist",
     "search:clear": "node scripts/clear-search-index.mjs",
     "search:debug:rebuild": "node scripts/rebuild-debug-search-index.mjs",
-    "storage:emulator": "azurite --silent --location ./.azurite --debug ./.azurite/debug.log --skipApiVersionCheck",
     "storage:setup": "node scripts/init-local-storage.mjs",
     "e2e:upload": "bash scripts/e2e-upload-check.sh",
     "start": "FUNCTIONS_WORKER_RUNTIME=node func start",
@@ -22,7 +21,6 @@
     "@azure/functions": "^4.5.0",
     "@azure/search-documents": "^12.1.0",
     "@azure/storage-blob": "^12.25.0",
-    "@azure/storage-queue": "^12.26.0",
     "jimp": "^1.6.1",
     "openai": "^6.34.0",
     "pdf-parse": "^1.1.1",
@@ -30,7 +28,6 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
-    "azurite": "^3.34.0",
     "typescript": "^5.6.3"
   }
 }

@@ -2,6 +2,8 @@
 
 [← README로 돌아가기](../README.md)
 
+클라우드에 배포할 때 Terraform이 만드는 범위와(Search/Cosmos는 기본 비활성) 운영 체크리스트는 [deployment-azure.md](./deployment-azure.md)를 본다.
+
 ## 목표
 
 이 프로젝트는 실무형 스토리를 바탕으로 만든 개인 Azure 네이티브 포트폴리오 프로젝트다.
@@ -10,9 +12,9 @@
 - 업로드된 파일은 Azure Blob Storage에 저장된다.
 - 이벤트 기반 파이프라인이 문서를 검증하고, 큐에 넣고, 비동기로 처리한다.
 - OCR과 텍스트 추출을 통해 검색 가능한 콘텐츠를 만든다.
-- 메타데이터는 Azure Cosmos DB에 저장한다.
-- 청크 단위 텍스트와 임베딩은 Azure AI Search에 저장한다.
-- RAG 챗봇은 테넌트 범위로 문서를 검색하고 Azure OpenAI로 답변을 생성한다.
+- 메타데이터는 **선택적으로** Azure Cosmos DB에 저장한다(`COSMOS_DB_ENABLED`; Terraform 기본은 끔).
+- 청크 단위 텍스트와 임베딩은 **선택적으로** Azure AI Search에 저장한다(`SEARCH_ENABLED`; Terraform 기본은 끔).
+- RAG 챗봇은 테넌트 범위로 문서를 검색하고(검색이 켜져 있을 때), Azure OpenAI 등으로 답변을 생성한다(키·엔드포인트 설정 시).
 
 이 프로젝트의 목적은 단순한 CRUD 앱이 아니라 다음을 보여주는 데 있다.
 
@@ -54,9 +56,9 @@
     | 8. 청킹
     | 9. 임베딩 생성
     |
-    +--> [Azure Cosmos DB] 메타데이터, 상태, 문서 기록
+    +--> [Azure Cosmos DB] (선택) 메타데이터, 상태, 문서 기록
     |
-    +--> [Azure AI Search] 청크, 벡터, 검색 인덱스
+    +--> [Azure AI Search] (선택) 청크, 벡터, 검색 인덱스
     |
     v
 [Chat API - Azure Functions HTTP 또는 Web App]
@@ -132,12 +134,13 @@ SAS 기반 direct upload를 쓰면:
    - content type
    - 허용된 확장자
    - 필요하다면 중복 파일 검출
-4. 함수는 Cosmos DB의 메타데이터 레코드를 생성하거나 갱신한다.
+4. `COSMOS_DB_ENABLED=true`이면 함수는 Cosmos DB의 메타데이터 레코드를 생성하거나 갱신한다.
    - status = uploaded 또는 queued
    - tenantId
    - documentId
    - blob URL 또는 blob name
-   - 타임스탬프
+   - 타임스탬프  
+   Cosmos가 꺼져 있으면 이 단계는 건너뛰고 큐 등록만 진행한다.
 5. 함수는 Azure Service Bus Queue로 처리 메시지를 발행한다.
 
 ### 3단계: 무거운 처리 수행
@@ -150,10 +153,10 @@ SAS 기반 direct upload를 쓰면:
    - 텍스트 기반 문서는 파싱 사용
 4. 워커는 텍스트를 정제하고 정규화한다.
 5. 워커는 텍스트를 청크로 나눈다.
-6. 워커는 Azure OpenAI를 사용해 각 청크의 임베딩을 생성한다.
+6. `EMBEDDING_ENABLED=true`이고 키가 구성되어 있으면 워커는 Azure OpenAI 또는 OpenAI로 각 청크의 임베딩을 생성한다.
 7. 워커는 다음 데이터를 저장한다.
-   - 운영 메타데이터는 Cosmos DB
-   - 청크 레코드와 벡터는 Azure AI Search
+   - 운영 메타데이터는 Cosmos DB (`COSMOS_DB_ENABLED=true`일 때)
+   - 청크 레코드와 벡터는 Azure AI Search (`SEARCH_ENABLED=true`일 때)
 8. 워커는 문서 상태를 갱신한다.
    - processing
    - indexed
@@ -172,8 +175,8 @@ SAS 기반 direct upload를 쓰면:
 1. 사용자가 채팅 UI에서 질문한다.
 2. 프론트엔드는 `/api/chat`을 호출한다.
 3. Chat API는 요청 본문의 `tenantId`를 사용한다(로그인 연동·발급 토큰 기반 테넌트 결정은 추후 보강).
-4. 백엔드는 사용자 질문으로부터 query embedding을 생성한다.
-5. Azure AI Search는 다음 조합으로 검색을 수행한다.
+4. `EMBEDDING_ENABLED=true`이면 백엔드는 사용자 질문으로부터 query embedding을 생성한다.
+5. `SEARCH_ENABLED=true`일 때 Azure AI Search는 다음 조합으로 검색을 수행한다.
    - 벡터 검색
    - 키워드 검색
    - 하이브리드 랭킹
@@ -192,7 +195,7 @@ SAS 기반 direct upload를 쓰면:
 
 현재 구현 상태:
 
-- `POST /api/chat` 엔드포인트가 `tenantId` 필터를 적용해 Azure AI Search에서 관련 청크를 조회한다.
+- `SEARCH_ENABLED=true`일 때 `POST /api/chat`이 `tenantId` 필터로 Azure AI Search에서 관련 청크를 조회한다. Search가 꺼져 있으면 챗 API는 동작하지 않는다.
 - `EMBEDDING_ENABLED=true` 설정 시 질문의 임베딩을 생성해 벡터 + 키워드 하이브리드 검색으로 전환한다.
 - `OPENAI_API_KEY` 설정 시 Azure OpenAI 또는 OpenAI GPT로 최종 답변을 생성한다.
 - 응답에는 answer, citations, retrievedChunks 수가 포함된다.

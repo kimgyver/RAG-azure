@@ -1,37 +1,101 @@
 /**
- * Local dev only: Azurite uploads 컨테이너 + processing-jobs 큐 생성
- * 사용법: node scripts/init-local-storage.mjs
- *         (Azurite가 먼저 실행 중이어야 합니다)
+ * Creates the uploads blob container on your Azure Storage account.
+ * Reads backend/functions-ingestion/local.settings.json (same layout as Functions).
+ *
+ * Usage (from backend/functions-ingestion):
+ *   npm run storage:setup
+ *
+ * Requires a real Azure Storage account (not Azurite). Use the same account as
+ * AzureWebJobsStorage so the blob trigger path `uploads/{name}` matches SAS uploads.
+ *
+ * Service Bus queue `AZURE_PROCESSING_QUEUE_NAME` must exist in Azure — create it
+ * in the portal; this script only touches Blob Storage.
  */
+import { readFileSync, existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { BlobServiceClient } from "@azure/storage-blob";
-import { QueueServiceClient } from "@azure/storage-queue";
 
-// Azurite 기본 연결 문자열 (로컬 개발 전용)
-const serviceClient = BlobServiceClient.fromConnectionString(
-  "UseDevelopmentStorage=true"
-);
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const settingsPath = join(__dirname, "..", "local.settings.json");
 
-// 1. CORS 설정: Vite 개발 서버 proxy가 대신 처리하므로 생략
+function loadValues() {
+  if (!existsSync(settingsPath)) {
+    console.error(
+      `Missing ${settingsPath}. Copy local.settings.json.example and fill in your Azure storage values.`
+    );
+    process.exit(1);
+  }
+  const raw = JSON.parse(readFileSync(settingsPath, "utf8"));
+  return raw.Values ?? {};
+}
 
-// 2. uploads 컨테이너 생성 (없으면)
-const containerClient = serviceClient.getContainerClient("uploads");
+function isAzuriteStyle(values) {
+  const name = (values.AZURE_STORAGE_ACCOUNT_NAME ?? "").trim();
+  const endpoint = (values.AZURE_STORAGE_BLOB_ENDPOINT ?? "").trim();
+  const jobs = (values.AzureWebJobsStorage ?? "").trim();
+  if (jobs === "UseDevelopmentStorage=true") {
+    return true;
+  }
+  if (name === "devstoreaccount1") {
+    return true;
+  }
+  if (/127\.0\.0\.1|localhost/.test(endpoint)) {
+    return true;
+  }
+  return false;
+}
+
+/** Connection string for the account that hosts the uploads container. */
+function resolveBlobConnectionString(values) {
+  if (isAzuriteStyle(values)) {
+    console.error(
+      "local.settings.json still points at storage emulator / Azurite. Replace with a real Azure Storage connection string (see local.settings.json.example)."
+    );
+    process.exit(1);
+  }
+
+  const jobs = (values.AzureWebJobsStorage ?? "").trim();
+  if (
+    jobs &&
+    jobs !== "UseDevelopmentStorage=true" &&
+    jobs.includes("AccountName=")
+  ) {
+    return jobs;
+  }
+
+  const name = (values.AZURE_STORAGE_ACCOUNT_NAME ?? "").trim();
+  const key = (values.AZURE_STORAGE_ACCOUNT_KEY ?? "").trim();
+  if (!name || !key) {
+    console.error(
+      "Set AzureWebJobsStorage to your storage account connection string, or set AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY."
+    );
+    process.exit(1);
+  }
+
+  return `DefaultEndpointsProtocol=https;AccountName=${name};AccountKey=${key};EndpointSuffix=core.windows.net`;
+}
+
+const values = loadValues();
+const connectionString = resolveBlobConnectionString(values);
+const containerName =
+  (values.AZURE_STORAGE_CONTAINER_NAME ?? "uploads").trim() || "uploads";
+
+const blobServiceClient =
+  BlobServiceClient.fromConnectionString(connectionString);
+const containerClient = blobServiceClient.getContainerClient(containerName);
 const { succeeded } = await containerClient.createIfNotExists();
-if (succeeded) {
-  console.log("✓ uploads 컨테이너 생성됨");
-} else {
-  console.log("✓ uploads 컨테이너 이미 존재");
-}
-
-// 3. processing-jobs 큐 생성 (없으면)
-const queueServiceClient = QueueServiceClient.fromConnectionString(
-  "UseDevelopmentStorage=true"
+console.log(
+  succeeded
+    ? `Created blob container "${containerName}".`
+    : `Blob container "${containerName}" already exists.`
 );
-const queueClient = queueServiceClient.getQueueClient("processing-jobs");
-const queueCreate = await queueClient.createIfNotExists();
-if (queueCreate.succeeded) {
-  console.log("✓ processing-jobs 큐 생성됨");
-} else {
-  console.log("✓ processing-jobs 큐 이미 존재");
-}
 
-console.log("로컬 스토리지/큐 초기화 완료.");
+const queueName = (values.AZURE_PROCESSING_QUEUE_NAME ?? "processing-jobs").trim();
+console.log(
+  `\nProcessing jobs use Service Bus queue "${queueName}". Create that queue in your Service Bus namespace if needed (this script does not create it).`
+);
+
+console.log(
+  "\nFor browser PUT uploads from Vite (http://localhost:5173), add CORS rules on the storage account: allowed origins include http://localhost:5173, methods PUT GET HEAD OPTIONS, allowed headers *."
+);

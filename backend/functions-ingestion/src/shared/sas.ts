@@ -34,7 +34,7 @@ export function createUploadSasUrl(payload: UploadSasPayload): string {
       expiresOn,
       protocol: isHttpEndpoint ? SASProtocol.HttpsAndHttp : SASProtocol.Https,
       contentType: payload.contentType,
-      version: "2020-12-06" // Azurite 호환 (프로덕션 Azure도 지원)
+      version: "2020-12-06" // stable SAS version for Azure Storage
     },
     sharedKey
   ).toString();

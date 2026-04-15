@@ -10,7 +10,7 @@ export default defineConfig({
                 target: "http://127.0.0.1:7071",
                 changeOrigin: true
             },
-            // Proxy Azurite blob PUT through Vite (CORS bypass in dev).
+            // Optional: proxy storage emulator blob paths if SAS points at 127.0.0.1:10000.
             "/devstoreaccount1": {
                 target: "http://127.0.0.1:10000",
                 changeOrigin: true
