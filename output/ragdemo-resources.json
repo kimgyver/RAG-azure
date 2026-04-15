@@ -1,0 +1,30 @@
+[
+  {
+    "id": "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourceGroups/ragdemo-8e73d3fb-rg/providers/Microsoft.Insights/components/ragdemo-8e73d3fb-ai",
+    "location": "eastus",
+    "name": "ragdemo-8e73d3fb-ai",
+    "rg": "ragdemo-8e73d3fb-rg",
+    "type": "Microsoft.Insights/components"
+  },
+  {
+    "id": "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourceGroups/ai_ragdemo-8e73d3fb-ai_722d36c2-6e45-44c0-a188-59e13e261c14_managed/providers/microsoft.operationalinsights/workspaces/managed-ragdemo-8e73d3fb-ai-ws",
+    "location": "eastus",
+    "name": "managed-ragdemo-8e73d3fb-ai-ws",
+    "rg": "ai_ragdemo-8e73d3fb-ai_722d36c2-6e45-44c0-a188-59e13e261c14_managed",
+    "type": "microsoft.operationalinsights/workspaces"
+  },
+  {
+    "id": "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourceGroups/ragdemo-8e73d3fb-rg/providers/microsoft.alertsmanagement/smartDetectorAlertRules/Failure Anomalies - ragdemo-8e73d3fb-ai",
+    "location": "global",
+    "name": "Failure Anomalies - ragdemo-8e73d3fb-ai",
+    "rg": "ragdemo-8e73d3fb-rg",
+    "type": "microsoft.alertsmanagement/smartDetectorAlertRules"
+  },
+  {
+    "id": "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourceGroups/ragdemo-8e73d3fb-rg/providers/Microsoft.Web/sites/ragdemo-8e73d3fb-fn",
+    "location": "australiaeast",
+    "name": "ragdemo-8e73d3fb-fn",
+    "rg": "ragdemo-8e73d3fb-rg",
+    "type": "Microsoft.Web/sites"
+  }
+]

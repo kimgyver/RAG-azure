@@ -42,6 +42,11 @@ type ChatResponse = {
     tenantId: string;
     retrievedChunks: number;
   };
+  memory?: {
+    sessionId: string;
+    summary: string;
+    recentTurnsUsed: number;
+  };
 };
 
 type UploadState = "idle" | "requesting-sas" | "uploading" | "done" | "error";
@@ -78,7 +83,9 @@ type RuntimeConfigSnapshot = {
   tenantAllowlistActive: boolean;
 };
 
-function searchModeLabel(mode: RuntimeConfigSnapshot["chatSearchMode"]): string {
+function searchModeLabel(
+  mode: RuntimeConfigSnapshot["chatSearchMode"]
+): string {
   switch (mode) {
     case "keyword":
       return "keyword";
@@ -115,6 +122,15 @@ type CatalogResponse = {
   tenantId: string;
   documents: CatalogDocumentRow[];
   sources: { cosmos: boolean; search: boolean };
+};
+
+type PurgeResponse = {
+  documentId: string;
+  tenantId: string;
+  deletedSearchChunks: number;
+  remainingSearchChunks?: number;
+  cosmosDeleted: boolean;
+  note?: string;
 };
 
 const initialChatMessages: ChatMessage[] = [
@@ -160,6 +176,30 @@ function relativeTimeLabel(input: string): string {
   return `${days}d ago`;
 }
 
+function extractApiMessage(raw: string, fallback: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return fallback;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as { message?: string };
+    if (typeof parsed?.message === "string" && parsed.message.trim()) {
+      return parsed.message.trim();
+    }
+  } catch {
+    // Keep raw text fallback.
+  }
+
+  return trimmed;
+}
+
+function waitMs(ms: number): Promise<void> {
+  return new Promise(resolve => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
 function App() {
   const defaultTenantId = useMemo(
     () => (import.meta.env.VITE_TENANT_ID?.trim() || "tenant-a").trim(),
@@ -171,6 +211,7 @@ function App() {
     useState<ChatMessage[]>(initialChatMessages);
   const [chatInput, setChatInput] = useState<string>("");
   const [chatPending, setChatPending] = useState<boolean>(false);
+  const [chatSummaryMemory, setChatSummaryMemory] = useState<string>("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadState, setUploadState] = useState<UploadState>("idle");
   const [uploadMessage, setUploadMessage] = useState<string>(
@@ -180,9 +221,8 @@ function App() {
     documentId: string;
     tenantId: string;
   } | null>(null);
-  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfigSnapshot | null>(
-    null
-  );
+  const [runtimeConfig, setRuntimeConfig] =
+    useState<RuntimeConfigSnapshot | null>(null);
   const [runtimeConfigStatus, setRuntimeConfigStatus] = useState<
     "loading" | "ok" | "error"
   >("loading");
@@ -192,6 +232,7 @@ function App() {
   >("loading");
   const [catalogMessage, setCatalogMessage] = useState<string>("");
   const [purgeBusyId, setPurgeBusyId] = useState<string | null>(null);
+  const [tenantError, setTenantError] = useState<string>("");
 
   const uploadApiBaseUrl = useMemo(() => {
     const fromEnv = import.meta.env.VITE_UPLOAD_API_BASE_URL?.trim();
@@ -211,6 +252,10 @@ function App() {
   );
 
   const effectiveTenantId = tenantId.trim() || defaultTenantId;
+  const chatSessionId = useMemo(
+    () => `web-${Math.random().toString(36).slice(2, 10)}`,
+    []
+  );
   const searchOnlyMode =
     runtimeConfigStatus === "ok" && runtimeConfig
       ? !runtimeConfig.openAiChatConfigured
@@ -244,20 +289,13 @@ function App() {
       );
       const text = await response.text();
       if (!response.ok) {
-        let detail = text || `HTTP ${response.status}`;
-        try {
-          const errBody = JSON.parse(text) as { message?: string };
-          if (typeof errBody?.message === "string" && errBody.message) {
-            detail = errBody.message;
-          }
-        } catch {
-          /* keep detail */
-        }
+        const detail = extractApiMessage(text, `HTTP ${response.status}`);
         throw new Error(detail);
       }
       const payload = JSON.parse(text) as CatalogResponse;
       setCatalogRows(payload.documents);
       setCatalogStatus("ok");
+      setTenantError("");
       setCatalogMessage(
         `Cosmos ${payload.sources.cosmos ? "ON" : "OFF"} · Search ${
           payload.sources.search ? "ON" : "OFF"
@@ -266,11 +304,26 @@ function App() {
     } catch (error) {
       setCatalogRows([]);
       setCatalogStatus("error");
-      setCatalogMessage(
-        error instanceof Error ? error.message : "Could not load catalog."
-      );
+      const message =
+        error instanceof Error ? error.message : "Could not load catalog.";
+      setCatalogMessage(message);
+      if (message.includes("tenantId is not allowed")) {
+        setTenantError(message);
+      }
     }
   }, [effectiveTenantId, uploadApiBaseUrl, uploadApiKey]);
+
+  const refreshCatalogWithRetries = useCallback(
+    async (attempts = 4, intervalMs = 350) => {
+      for (let i = 0; i < attempts; i += 1) {
+        await loadCatalog();
+        if (i < attempts - 1) {
+          await waitMs(intervalMs);
+        }
+      }
+    },
+    [loadCatalog]
+  );
 
   useEffect(() => {
     void loadCatalog();
@@ -375,6 +428,7 @@ function App() {
 
         if (terminalStatuses.has(payload.status)) {
           setTrackedDocument(null);
+          await refreshCatalogWithRetries(3, 500);
         }
       } catch {
         // Polling errors retry on the next interval.
@@ -390,15 +444,18 @@ function App() {
       isCancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [trackedDocument, uploadApiBaseUrl, uploadApiKey]);
+  }, [
+    trackedDocument,
+    uploadApiBaseUrl,
+    uploadApiKey,
+    refreshCatalogWithRetries
+  ]);
 
   const onFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
     setSelectedFile(file);
     setUploadState("idle");
-    setUploadMessage(
-      file ? `${file.name} selected.` : "Please choose a file."
-    );
+    setUploadMessage(file ? `${file.name} selected.` : "Please choose a file.");
   };
 
   const startUpload = async () => {
@@ -438,8 +495,12 @@ function App() {
 
       if (!sasResponse.ok) {
         const responseText = await sasResponse.text();
+        const detail = extractApiMessage(
+          responseText,
+          `HTTP ${sasResponse.status}`
+        );
         throw new Error(
-          `Failed to get SAS URL (${sasResponse.status}) ${responseText}`
+          `Failed to get SAS URL (${sasResponse.status}) ${detail}`
         );
       }
 
@@ -491,6 +552,7 @@ function App() {
         tenantId: sasPayload.tenantId
       });
       setUploadState("done");
+      setTenantError("");
       setUploadMessage("Upload complete. Status will show as queued.");
     } catch (error) {
       setDocuments(prev =>
@@ -501,6 +563,9 @@ function App() {
       setUploadState("error");
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
+      if (errorMessage.includes("tenantId is not allowed")) {
+        setTenantError("tenantId is not allowed for this deployment.");
+      }
       setUploadMessage(
         `Upload error: ${errorMessage} (API: ${uploadApiBaseUrl}/uploads/create)`
       );
@@ -524,6 +589,16 @@ function App() {
     setChatPending(true);
 
     try {
+      const messagesForMemory = [...chatMessages, userMessage]
+        .filter(
+          message => message.role === "user" || message.role === "assistant"
+        )
+        .slice(-12)
+        .map(message => ({
+          role: message.role,
+          content: message.content
+        }));
+
       const response = await fetch(`${uploadApiBaseUrl}/chat`, {
         method: "POST",
         headers: {
@@ -532,23 +607,33 @@ function App() {
         },
         body: JSON.stringify({
           tenantId: effectiveTenantId,
-          question
+          question,
+          sessionId: chatSessionId,
+          summaryMemory: chatSummaryMemory,
+          messages: messagesForMemory
         })
       });
 
       if (!response.ok) {
         const responseText = await response.text();
-        throw new Error(`Chat request failed (${response.status}) ${responseText}`);
+        const detail = extractApiMessage(
+          responseText,
+          `HTTP ${response.status}`
+        );
+        throw new Error(`Chat request failed (${response.status}) ${detail}`);
       }
 
       const payload = (await response.json()) as ChatResponse;
+      setTenantError("");
+      if (payload.memory?.summary) {
+        setChatSummaryMemory(payload.memory.summary);
+      }
       const assistantMessage: ChatMessage = {
         id: `assistant-${Date.now()}`,
         role: "assistant",
         content: payload.answer,
         citations: payload.citations.map(
-          citation =>
-            `${citation.fileName} · chunk ${citation.chunkIndex + 1}`
+          citation => `${citation.fileName} · chunk ${citation.chunkIndex + 1}`
         )
       };
 
@@ -556,6 +641,9 @@ function App() {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
+      if (errorMessage.includes("tenantId is not allowed")) {
+        setTenantError("tenantId is not allowed for this deployment.");
+      }
 
       setChatMessages(prev => [
         ...prev,
@@ -592,13 +680,26 @@ function App() {
       );
       const text = await response.text();
       if (!response.ok) {
-        throw new Error(text || `HTTP ${response.status}`);
+        const detail = extractApiMessage(text, `HTTP ${response.status}`);
+        throw new Error(detail);
       }
-      await loadCatalog();
+      let purgePayload: PurgeResponse | null = null;
+      try {
+        purgePayload = JSON.parse(text) as PurgeResponse;
+      } catch {
+        // The API currently responds with JSON; keep resilient parsing.
+      }
+
+      const attempts =
+        purgePayload && (purgePayload.remainingSearchChunks ?? 0) > 0 ? 6 : 4;
+      await refreshCatalogWithRetries(attempts, 350);
+      setTenantError("");
     } catch (error) {
-      window.alert(
-        error instanceof Error ? error.message : "Delete failed."
-      );
+      const message = error instanceof Error ? error.message : "Delete failed.";
+      if (message.includes("tenantId is not allowed")) {
+        setTenantError("tenantId is not allowed for this deployment.");
+      }
+      window.alert(message);
     } finally {
       setPurgeBusyId(null);
     }
@@ -641,9 +742,7 @@ function App() {
               <div>
                 <span>Cosmos · document state</span>
                 <strong>{runtimeConfig.cosmosDbEnabled ? "On" : "Off"}</strong>
-                <p className="hero-stat-sub">
-                  {cosmosStateSummary}
-                </p>
+                <p className="hero-stat-sub">{cosmosStateSummary}</p>
                 <p className="hero-stat-sub hero-stat-sub-secondary">
                   {runtimeConfig.tenantAllowlistActive
                     ? "Allowlisted tenants only (ALLOWED_TENANT_IDS)"
@@ -667,9 +766,7 @@ function App() {
                     ? "Generative"
                     : "Search snippets only"}
                 </strong>
-                <p className="hero-stat-sub">
-                  {chatModeSummary}
-                </p>
+                <p className="hero-stat-sub">{chatModeSummary}</p>
                 <p className="hero-stat-sub hero-stat-sub-secondary">
                   {runtimeConfig.openAiChatConfigured
                     ? "OPENAI_API_KEY set — GPT-style answers"
@@ -691,7 +788,12 @@ function App() {
             className="tenant-context-input"
             type="text"
             value={tenantId}
-            onChange={event => setTenantId(event.target.value)}
+            onChange={event => {
+              setTenantId(event.target.value);
+              if (tenantError) {
+                setTenantError("");
+              }
+            }}
             placeholder={defaultTenantId}
             spellCheck={false}
             autoComplete="off"
@@ -704,9 +806,14 @@ function App() {
             {effectiveTenantId}
           </code>
         </div>
+        {tenantError ? (
+          <p className="tenant-context-error" role="alert">
+            {tenantError}
+          </p>
+        ) : null}
         <p id="tenant-context-desc" className="tenant-context-desc">
-          Upload, blob path, indexing, chat retrieval, catalog, and purge all use
-          the <strong>same</strong> tenant. Leave blank for default{" "}
+          Upload, blob path, indexing, chat retrieval, catalog, and purge all
+          use the <strong>same</strong> tenant. Leave blank for default{" "}
           <code className="inline-code">{defaultTenantId}</code> from{" "}
           <code className="inline-code">VITE_TENANT_ID</code>.
         </p>
@@ -714,139 +821,155 @@ function App() {
 
       <main className="main-stack">
         <div className="workspace-grid">
-        <section className="panel panel-upload">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">Upload</p>
-              <h2>Document upload</h2>
-            </div>
-            <span className="panel-tag">SAS direct upload</span>
-          </div>
-
-          <label className="dropzone" htmlFor="file-upload">
-            <input id="file-upload" type="file" onChange={onFileChange} />
-            <span className="dropzone-icon">+</span>
-            <strong>Choose PDF, PNG, or JPG</strong>
-            <p>
-              After you start upload, the app requests a SAS URL and the browser
-              PUTs the file to Blob Storage. PNG and JPEG can be OCR’d on the
-              server for text.
-            </p>
-          </label>
-
-          <div className="upload-actions">
-            <button type="button" onClick={startUpload}>
-              Start upload
-            </button>
-            <p className={`upload-hint upload-${uploadState}`}>
-              {uploadMessage}
-            </p>
-          </div>
-
-          <div className="upload-meta-grid">
-            <div className="meta-card">
-              <span>Blob path prefix</span>
-              <strong>{effectiveTenantId}/YYYY/MM/</strong>
-            </div>
-            <div className="meta-card">
-              <span>API base URL</span>
-              <strong>{uploadApiBaseUrl}</strong>
-            </div>
-          </div>
-
-          <div className="timeline-card">
-            <div className="timeline-header">
-              <h3>Processing status</h3>
-              <span>Recent uploads</span>
+          <section className="panel panel-upload">
+            <div className="panel-header">
+              <div>
+                <p className="panel-kicker">Upload</p>
+                <h2>Document upload</h2>
+              </div>
+              <span className="panel-tag">SAS direct upload</span>
             </div>
 
-            <ul className="document-list">
-              {documents.map(item => (
-                <li key={item.id} className="document-row">
-                  <div>
-                    <strong>{item.fileName}</strong>
-                    <p>{item.updatedAt}</p>
-                  </div>
-                  <span className={`status-pill status-${item.status}`}>
-                    {statusLabel[item.status]}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
-
-        <section className="panel panel-chat">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">Chat</p>
-              <h2>RAG chatbot</h2>
-            </div>
-            <span className="panel-tag">Tenant-scoped search</span>
-          </div>
-
-          {runtimeConfigStatus === "ok" && runtimeConfig ? (
-            <div className={`mode-callout ${searchOnlyMode ? "mode-callout-warning" : "mode-callout-ok"}`}>
-              <strong>
-                {searchOnlyMode ? "Search-only fallback mode" : "Generative answer mode"}
-              </strong>
+            <label className="dropzone" htmlFor="file-upload">
+              <input id="file-upload" type="file" onChange={onFileChange} />
+              <span className="dropzone-icon">+</span>
+              <strong>Choose PDF, PNG, or JPG</strong>
               <p>
-                {searchOnlyMode
-                  ? "This is not an error. The assistant is answering from Azure AI Search results because no OpenAI credential is configured yet."
-                  : "Search results are retrieved first and then condensed into a model-generated answer."}
+                After you start upload, the app requests a SAS URL and the
+                browser PUTs the file to Blob Storage. PNG and JPEG can be OCR’d
+                on the server for text.
+              </p>
+            </label>
+
+            <div className="upload-actions">
+              <button type="button" onClick={startUpload}>
+                Start upload
+              </button>
+              <p className={`upload-hint upload-${uploadState}`}>
+                {uploadMessage}
               </p>
             </div>
-          ) : null}
 
-          <div className="chat-stream">
-            {chatMessages.map(message => (
-              <article
-                key={message.id}
-                className={`message message-${message.role}`}
-              >
-                <span className="message-role">
-                  {message.role === "user" ? "You" : "Assistant"}
-                </span>
-                <p>{message.content}</p>
-                {message.citations?.length ? (
-                  <small>Sources: {message.citations.join(" / ")}</small>
-                ) : null}
-              </article>
-            ))}
-          </div>
-
-          <form
-            className="chat-composer"
-            onSubmit={event => {
-              event.preventDefault();
-              void sendChat();
-            }}
-          >
-            <label className="composer-label" htmlFor="chat-input">
-              Your question
-            </label>
-            <textarea
-              id="chat-input"
-              rows={4}
-              placeholder="e.g. What does the contract say about termination?"
-              value={chatInput}
-              onChange={event => setChatInput(event.target.value)}
-              disabled={chatPending}
-            />
-            <div className="composer-actions">
-              <div className="composer-hint">
-                Search always runs first. The runtime flag above decides whether
-                the final answer is search-only or model-generated.
+            <div className="upload-meta-grid">
+              <div className="meta-card">
+                <span>Blob path prefix</span>
+                <strong>{effectiveTenantId}/YYYY/MM/</strong>
               </div>
-              <button type="submit" disabled={chatPending || !chatInput.trim()}>
-                {chatPending ? "Working…" : "Send question"}
-              </button>
+              <div className="meta-card">
+                <span>API base URL</span>
+                <strong>{uploadApiBaseUrl}</strong>
+              </div>
             </div>
-          </form>
-        </section>
+
+            <div className="timeline-card">
+              <div className="timeline-header">
+                <h3>Processing status</h3>
+                <span>Recent uploads</span>
+              </div>
+
+              <ul className="document-list">
+                {documents.map(item => (
+                  <li key={item.id} className="document-row">
+                    <div>
+                      <strong>{item.fileName}</strong>
+                      <p>{item.updatedAt}</p>
+                    </div>
+                    <span className={`status-pill status-${item.status}`}>
+                      {statusLabel[item.status]}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </section>
+
+          <section className="panel panel-chat">
+            <div className="panel-header">
+              <div>
+                <p className="panel-kicker">Chat</p>
+                <h2>RAG chatbot</h2>
+              </div>
+              <span className="panel-tag">Tenant-scoped search</span>
+            </div>
+
+            {runtimeConfigStatus === "ok" && runtimeConfig ? (
+              <div
+                className={`mode-callout ${searchOnlyMode ? "mode-callout-warning" : "mode-callout-ok"}`}
+              >
+                <strong>
+                  {searchOnlyMode
+                    ? "Search-only fallback mode"
+                    : "Generative answer mode"}
+                </strong>
+                <p>
+                  {searchOnlyMode
+                    ? "This is not an error. The assistant is answering from Azure AI Search results because no OpenAI credential is configured yet."
+                    : "Search results are retrieved first and then condensed into a model-generated answer."}
+                </p>
+              </div>
+            ) : null}
+
+            <div className="chat-stream">
+              {chatMessages.map(message => (
+                <article
+                  key={message.id}
+                  className={`message message-${message.role}`}
+                >
+                  <span className="message-role">
+                    {message.role === "user" ? "You" : "Assistant"}
+                  </span>
+                  <p>{message.content}</p>
+                  {message.citations?.length ? (
+                    <small>Sources: {message.citations.join(" / ")}</small>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+
+            <form
+              className="chat-composer"
+              onSubmit={event => {
+                event.preventDefault();
+                void sendChat();
+              }}
+            >
+              <label className="composer-label" htmlFor="chat-input">
+                Your question
+              </label>
+              <textarea
+                id="chat-input"
+                rows={4}
+                placeholder="e.g. What does the contract say about termination?"
+                value={chatInput}
+                onChange={event => setChatInput(event.target.value)}
+                onKeyDown={event => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    void sendChat();
+                  }
+                }}
+                disabled={chatPending}
+              />
+              <div className="composer-actions">
+                <div className="composer-hint">
+                  Search always runs first. The runtime flag above decides
+                  whether the final answer is search-only or model-generated.
+                </div>
+                <button
+                  type="submit"
+                  disabled={chatPending || !chatInput.trim()}
+                >
+                  {chatPending ? "Working…" : "Send question"}
+                </button>
+              </div>
+            </form>
+          </section>
         </div>
 
-        <section className="panel catalog-panel" aria-labelledby="catalog-heading">
+        <section
+          className="panel catalog-panel"
+          aria-labelledby="catalog-heading"
+        >
           <div className="panel-header">
             <div>
               <p className="panel-kicker">Admin</p>

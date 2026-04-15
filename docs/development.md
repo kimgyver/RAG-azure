@@ -247,6 +247,10 @@ tenant 필터 기반 하이브리드 검색과 답변 생성을 구현한다.
 - `EMBEDDING_ENABLED=true` 설정 시 질문의 임베딩을 생성해 벡터 + 키워드 하이브리드 검색 수행
 - `CHAT_SEARCH_MODE=keyword|hybrid|vector` 로 검색 모드를 전환 가능 (`hybrid` 기본값)
 - Functions 로그에 `Chat search executed.` 항목으로 configured/effective mode, vectorUsed, retrievedChunks 출력
+- 멀티턴 품질 개선: 요청 body의 `messages`(최근 대화) + `summaryMemory`(요약 메모리)를 함께 받아 프롬프트에 결합
+- 비용/토큰 상한 우선 적용: `CHAT_PROMPT_CHAR_BUDGET`, `CHAT_MAX_COMPLETION_TOKENS`, `CHAT_CONTEXT_CHAR_BUDGET`, `CHAT_QUESTION_CHAR_LIMIT`
+- 메모리 예산 제어: `CHAT_MEMORY_RECENT_TURNS`, `CHAT_MEMORY_RECENT_CHAR_BUDGET`, `CHAT_MEMORY_SUMMARY_CHAR_BUDGET`
+- App Insights용 채팅 텔레메트리 로그 추가: 검색 모드, 히트 수, 응답 길이, fallback 여부, 지연(ms), prompt budget 적용 여부
 - `OPENAI_API_KEY` 설정 시 Azure OpenAI 또는 OpenAI GPT로 최종 답변 생성
 - 응답에 answer, citations(문서 출처), retrievedChunks 수 포함
 - 미설정 환경에서는 검색 결과 스니펫 기반의 search-only fallback 답변으로 동작한다. 이는 오류가 아니라, LLM 연결 전에도 검색 품질과 tenant 필터를 검증할 수 있도록 한 운영 모드다.
@@ -255,9 +259,9 @@ tenant 필터 기반 하이브리드 검색과 답변 생성을 구현한다.
 
 대화 이력 포함 여부(현재 동작):
 
-- 현재 `POST /api/chat`은 요청 body로 `tenantId`, `question`만 받는다.
-- OpenAI 호출 시 메시지는 system + user(문서 컨텍스트 + 현재 질문) 형태로 구성된다.
-- 즉, 멀티턴 맥락 유지가 필요하면 chat history 저장/요약/전달 로직을 별도로 추가해야 한다.
+- `POST /api/chat`은 `tenantId`, `question` 외에 `messages`, `summaryMemory`, `sessionId`를 받을 수 있다.
+- 백엔드는 최근 N턴(`CHAT_MEMORY_RECENT_TURNS`)과 요약 메모리를 함께 프롬프트에 포함한다.
+- 총 프롬프트 길이가 예산(`CHAT_PROMPT_CHAR_BUDGET`)을 넘으면 컨텍스트/메모리를 자동 축약한다.
 
 기존 Search 인덱스만 있고 Cosmos 메타데이터가 비어 있는 문서를 채우려면:
 
@@ -313,3 +317,8 @@ Storage 용어 정리(공식 명칭):
 - 재시도 정책
 - DLQ 처리
 - 상태 전이 관리
+
+운영 로그 소음(폴링 로그) 줄이기:
+
+- `backend/functions-ingestion/host.json`의 `logging.logLevel`에서 `Host.Triggers.*`를 `Warning`으로 설정해 Blob/Queue 폴링 로그를 최소화했다.
+- 필요한 경우 `Function.chat`만 `Information`으로 유지해 챗 텔레메트리만 집중적으로 볼 수 있다.

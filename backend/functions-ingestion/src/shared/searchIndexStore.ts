@@ -437,3 +437,25 @@ export async function deleteSearchChunksForDocument(
 
   return totalDeleted;
 }
+
+export async function countSearchChunksForDocument(
+  documentId: string,
+  tenantId: string
+): Promise<number> {
+  if (!isSearchEnabled()) {
+    return 0;
+  }
+
+  await ensureIndex();
+  const client = getSearchClient();
+  const filter = `tenantId eq '${escapeODataStringLiteral(tenantId)}' and documentId eq '${escapeODataStringLiteral(documentId)}'`;
+
+  const response = await client.search("*", {
+    filter,
+    top: 1,
+    includeTotalCount: true,
+    select: ["id"]
+  });
+
+  return response.count ?? 0;
+}

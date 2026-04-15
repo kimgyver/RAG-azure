@@ -14,6 +14,14 @@
 # project_name = "ragdemo"
 # app_service_plan_sku = "Y1"   # only if Terraform creates the plan AND you have Consumption quota
 # blob_cors_origins = ["http://localhost:5173", "https://your-frontend.azurestaticapps.net"]
+# extra_app_settings = {
+#   BLOB_TRIGGER_SOURCE = "EventGrid"
+# }
+# allowed_tenant_ids = ["tenant-a", "tenant-b"]
+# enable_chat_alerts = true
+# chat_alert_email_receivers = ["ops@example.com"]
+# chat_failure_count_threshold = 3
+# chat_latency_p95_threshold_ms = 6000
 #
 # --- Optional: merge into Function App settings (overrides defaults in main.tf) ---
 # Do NOT commit real secrets. Use Portal Configuration instead if you prefer.
@@ -35,6 +43,8 @@
 #   # AZURE_OPENAI_ENDPOINT = "https://<resource>.openai.azure.com/"
 #   # AZURE_OPENAI_API_KEY    = "..."
 #
-#   # --- Production-style tenant lockdown (comma-separated) ---
-#   # ALLOWED_TENANT_IDS = "tenant-a,tenant-b"
+#   # --- Chat cost guardrails (optional overrides) ---
+#   # CHAT_PROMPT_CHAR_BUDGET = "12000"
+#   # CHAT_MAX_COMPLETION_TOKENS = "600"
+#   # CHAT_MEMORY_RECENT_TURNS = "3"
 # }

@@ -215,6 +215,13 @@ button:hover {
   color: var(--muted);
 }
 
+.tenant-context-error {
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
+  color: #8f1f1f;
+  font-weight: 600;
+}
+
 .main-stack {
   display: flex;
   flex-direction: column;

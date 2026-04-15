@@ -15,6 +15,50 @@ function badRequest(message) {
 function compactWhitespace(value) {
     return value.replace(/\s+/g, " ").trim();
 }
+function parsePositiveIntEnv(name, fallback, min, max) {
+    const raw = process.env[name];
+    const value = Number(raw ?? fallback);
+    if (!Number.isFinite(value)) {
+        return fallback;
+    }
+    const rounded = Math.floor(value);
+    return Math.max(min, Math.min(max, rounded));
+}
+function getChatCostCaps() {
+    return {
+        promptCharBudget: parsePositiveIntEnv("CHAT_PROMPT_CHAR_BUDGET", 12000, 2000, 60000),
+        questionCharLimit: parsePositiveIntEnv("CHAT_QUESTION_CHAR_LIMIT", 1200, 200, 6000),
+        contextCharBudget: parsePositiveIntEnv("CHAT_CONTEXT_CHAR_BUDGET", 7000, 1000, 30000),
+        maxCompletionTokens: parsePositiveIntEnv("CHAT_MAX_COMPLETION_TOKENS", 600, 100, 4000),
+        memoryRecentTurns: parsePositiveIntEnv("CHAT_MEMORY_RECENT_TURNS", 3, 1, 10),
+        memoryRecentCharBudget: parsePositiveIntEnv("CHAT_MEMORY_RECENT_CHAR_BUDGET", 2200, 300, 12000),
+        memorySummaryCharBudget: parsePositiveIntEnv("CHAT_MEMORY_SUMMARY_CHAR_BUDGET", 1200, 200, 8000),
+        slowThresholdMs: parsePositiveIntEnv("CHAT_SLOW_THRESHOLD_MS", 4000, 500, 120000)
+    };
+}
+function trimToLength(value, maxLength) {
+    if (maxLength <= 0) {
+        return "";
+    }
+    const normalized = compactWhitespace(value);
+    if (normalized.length <= maxLength) {
+        return normalized;
+    }
+    return `${normalized.slice(0, maxLength).trimEnd()}...`;
+}
+function sanitizeMessages(messages, maxMessages = 24, maxCharsPerMessage = 800) {
+    if (!messages || messages.length === 0) {
+        return [];
+    }
+    const sliced = messages.slice(-maxMessages);
+    return sliced
+        .filter(message => message.role === "user" || message.role === "assistant")
+        .map(message => ({
+        role: message.role,
+        content: trimToLength(message.content, maxCharsPerMessage)
+    }))
+        .filter(message => Boolean(message.content));
+}
 function createSnippet(content, maxLength = 240) {
     const normalized = compactWhitespace(content);
     if (normalized.length <= maxLength) {
@@ -33,10 +77,107 @@ function getOpenAiClient() {
     }
     return openaiClient;
 }
-function buildContextFromHits(hits) {
-    return hits
+function buildContextFromHits(hits, maxChars) {
+    const combined = hits
         .map((hit, index) => `[Source ${index + 1}: ${hit.fileName} — chunk ${hit.chunkIndex + 1}]\n${compactWhitespace(hit.content)}`)
         .join("\n\n");
+    return trimToLength(combined, maxChars);
+}
+function formatTurns(messages, maxChars) {
+    const formatted = messages
+        .map(message => {
+        const roleLabel = message.role === "user" ? "User" : "Assistant";
+        return `${roleLabel}: ${message.content}`;
+    })
+        .join("\n");
+    return trimToLength(formatted, maxChars);
+}
+function summarizeOlderTurns(olderMessages, summaryMemory, maxChars) {
+    const parts = [];
+    const normalizedSummaryMemory = trimToLength(summaryMemory, maxChars);
+    if (normalizedSummaryMemory) {
+        parts.push(`Previous summary: ${normalizedSummaryMemory}`);
+    }
+    if (olderMessages.length > 0) {
+        const concise = olderMessages
+            .slice(-8)
+            .map(message => {
+            const roleLabel = message.role === "user" ? "U" : "A";
+            return `${roleLabel}: ${trimToLength(message.content, 120)}`;
+        })
+            .join(" | ");
+        if (concise) {
+            parts.push(`Older turns summary: ${concise}`);
+        }
+    }
+    return trimToLength(parts.join("\n"), maxChars);
+}
+function buildMemoryContext(messages, summaryMemory, caps) {
+    if (messages.length === 0 && !summaryMemory?.trim()) {
+        return {
+            summary: "",
+            recentTurnsUsed: 0,
+            promptText: ""
+        };
+    }
+    const recentMessageCount = Math.min(messages.length, caps.memoryRecentTurns * 2);
+    const recentMessages = messages.slice(-recentMessageCount);
+    const olderMessages = messages.slice(0, Math.max(0, messages.length - recentMessageCount));
+    const summary = summarizeOlderTurns(olderMessages, summaryMemory ?? "", caps.memorySummaryCharBudget);
+    const recentTurns = formatTurns(recentMessages, caps.memoryRecentCharBudget);
+    const sections = [];
+    if (summary) {
+        sections.push(`Conversation summary memory:\n${summary}`);
+    }
+    if (recentTurns) {
+        sections.push(`Recent turns:\n${recentTurns}`);
+    }
+    return {
+        summary,
+        recentTurnsUsed: recentMessages.length,
+        promptText: sections.join("\n\n")
+    };
+}
+function applyPromptBudget(question, contextText, memoryText, caps) {
+    const normalizedQuestion = trimToLength(question, caps.questionCharLimit);
+    let contextSection = contextText;
+    let memorySection = memoryText;
+    const initialContextLength = contextSection.length;
+    const initialMemoryLength = memorySection.length;
+    const renderPrompt = () => {
+        const chunks = [];
+        if (memorySection) {
+            chunks.push(`Conversation memory:\n\n${memorySection}`);
+        }
+        if (contextSection) {
+            chunks.push(`Document context:\n\n${contextSection}`);
+        }
+        chunks.push(`Question:\n\n${normalizedQuestion}`);
+        return chunks.join("\n\n");
+    };
+    let text = renderPrompt();
+    let guard = 0;
+    while (text.length > caps.promptCharBudget && guard < 8) {
+        const overflow = text.length - caps.promptCharBudget;
+        if (contextSection.length >= memorySection.length && contextSection.length > 300) {
+            contextSection = trimToLength(contextSection, Math.max(300, contextSection.length - overflow));
+        }
+        else if (memorySection.length > 180) {
+            memorySection = trimToLength(memorySection, Math.max(180, memorySection.length - overflow));
+        }
+        else {
+            break;
+        }
+        text = renderPrompt();
+        guard += 1;
+    }
+    return {
+        text,
+        promptChars: text.length,
+        promptCapped: text.length > caps.promptCharBudget ||
+            contextSection.length < initialContextLength ||
+            memorySection.length < initialMemoryLength
+    };
 }
 function extractIdentitySubject(question) {
     const normalized = question.trim().replace(/\?+$/, "");
@@ -88,10 +229,17 @@ function buildSearchOnlyAnswer(question, hits) {
     }
     return sections.join("\n");
 }
-async function generateAnswer(question, hits) {
+async function generateAnswer(question, hits, memoryContext, caps) {
     const client = getOpenAiClient();
+    const documentContext = buildContextFromHits(hits, caps.contextCharBudget);
+    const promptPayload = applyPromptBudget(question, documentContext, memoryContext.promptText, caps);
     if (!client) {
-        return buildSearchOnlyAnswer(question, hits);
+        return {
+            answer: buildSearchOnlyAnswer(question, hits),
+            fallbackUsed: true,
+            promptChars: promptPayload.promptChars,
+            promptCapped: promptPayload.promptCapped
+        };
     }
     const model = process.env.OPENAI_MODEL?.trim() ?? "gpt-4o-mini";
     if (hits.length === 0) {
@@ -104,33 +252,48 @@ async function generateAnswer(question, hits) {
                 },
                 {
                     role: "user",
-                    content: `No relevant documents were found. Please respond helpfully to:\n\n${question}`
+                    content: `No relevant documents were found. Use conversation memory if available, and be explicit if confidence is low.\n\n${promptPayload.text}`
                 }
             ],
             temperature: 0.3,
-            max_tokens: 300
+            max_tokens: caps.maxCompletionTokens
         });
-        return (completion.choices[0]?.message?.content?.trim() ??
-            "Could not generate an answer.");
+        return {
+            answer: completion.choices[0]?.message?.content?.trim() ??
+                "Could not generate an answer.",
+            fallbackUsed: false,
+            promptChars: promptPayload.promptChars,
+            promptCapped: promptPayload.promptCapped,
+            promptTokenCount: completion.usage?.prompt_tokens,
+            completionTokenCount: completion.usage?.completion_tokens,
+            totalTokenCount: completion.usage?.total_tokens
+        };
     }
-    const context = buildContextFromHits(hits);
     const completion = await client.chat.completions.create({
         model,
         messages: [
             {
                 role: "system",
-                content: "You are a helpful document assistant. Answer questions based solely on the provided document context. Be concise and precise. Answer in the same language as the user's question. If the answer cannot be found in the context, say so clearly."
+                content: "You are a helpful document assistant. Answer questions based on conversation memory plus provided document context. Be concise and precise. Answer in the same language as the user's question. If the answer cannot be found in context, say so clearly."
             },
             {
                 role: "user",
-                content: `Document context:\n\n${context}\n\nQuestion: ${question}`
+                content: promptPayload.text
             }
         ],
         temperature: 0.1,
-        max_tokens: 600
+        max_tokens: caps.maxCompletionTokens
     });
-    return (completion.choices[0]?.message?.content?.trim() ??
-        "Could not generate an answer.");
+    return {
+        answer: completion.choices[0]?.message?.content?.trim() ??
+            "Could not generate an answer.",
+        fallbackUsed: false,
+        promptChars: promptPayload.promptChars,
+        promptCapped: promptPayload.promptCapped,
+        promptTokenCount: completion.usage?.prompt_tokens,
+        completionTokenCount: completion.usage?.completion_tokens,
+        totalTokenCount: completion.usage?.total_tokens
+    };
 }
 async function chatHandler(request, context) {
     let payload;
@@ -165,11 +328,17 @@ async function chatHandler(request, context) {
     try {
         const top = Number(process.env.CHAT_SEARCH_TOP ?? "5");
         const searchTop = Number.isFinite(top) && top > 0 ? top : 5;
+        const caps = getChatCostCaps();
         const configuredSearchMode = getConfiguredSearchMode();
         const embeddingsAvailable = embeddingEnabled();
+        const startMs = Date.now();
+        const sessionId = payload.sessionId?.trim() || `${tenantId}-default`;
+        const normalizedQuestion = trimToLength(question, caps.questionCharLimit);
+        const sanitizedMessages = sanitizeMessages(payload.messages);
+        const memoryContext = buildMemoryContext(sanitizedMessages, payload.summaryMemory, caps);
         let queryEmbedding;
         if (configuredSearchMode !== "keyword" && embeddingsAvailable) {
-            queryEmbedding = (await generateEmbedding(question)) ?? undefined;
+            queryEmbedding = (await generateEmbedding(normalizedQuestion)) ?? undefined;
         }
         if (configuredSearchMode === "vector" && !queryEmbedding) {
             return {
@@ -182,7 +351,7 @@ async function chatHandler(request, context) {
         const effectiveSearchMode = configuredSearchMode === "hybrid" && !queryEmbedding
             ? "keyword"
             : configuredSearchMode;
-        const hits = await searchChunkDocuments(question, tenantId, searchTop, queryEmbedding, effectiveSearchMode);
+        const hits = await searchChunkDocuments(normalizedQuestion, tenantId, searchTop, queryEmbedding, effectiveSearchMode);
         context.log("Chat search executed.", {
             tenantId,
             configuredSearchMode,
@@ -190,9 +359,35 @@ async function chatHandler(request, context) {
             vectorUsed: !!queryEmbedding && effectiveSearchMode !== "keyword",
             retrievedChunks: hits.length
         });
-        const answer = await generateAnswer(question, hits);
+        const generationResult = await generateAnswer(normalizedQuestion, hits, memoryContext, caps);
+        const latencyMs = Date.now() - startMs;
+        const responseChars = generationResult.answer.length;
+        const telemetryPayload = {
+            tenantId,
+            sessionId,
+            configuredSearchMode,
+            effectiveSearchMode,
+            vectorUsed: !!queryEmbedding && effectiveSearchMode !== "keyword",
+            retrievedChunks: hits.length,
+            fallbackUsed: generationResult.fallbackUsed,
+            responseChars,
+            promptChars: generationResult.promptChars,
+            promptCapped: generationResult.promptCapped,
+            latencyMs,
+            slow: latencyMs >= caps.slowThresholdMs,
+            maxCompletionTokens: caps.maxCompletionTokens,
+            recentTurnsUsed: memoryContext.recentTurnsUsed,
+            summaryChars: memoryContext.summary.length
+        };
+        context.log("Chat telemetry", telemetryPayload);
+        if (generationResult.fallbackUsed) {
+            context.warn("Chat fallback mode used", telemetryPayload);
+        }
+        if (latencyMs >= caps.slowThresholdMs) {
+            context.warn("Chat latency threshold exceeded", telemetryPayload);
+        }
         const responseBody = {
-            answer,
+            answer: generationResult.answer,
             citations: hits.map(hit => ({
                 documentId: hit.documentId,
                 fileName: hit.fileName,
@@ -201,11 +396,25 @@ async function chatHandler(request, context) {
                 snippet: createSnippet(hit.content),
                 score: hit.score
             })),
+            memory: {
+                sessionId,
+                summary: memoryContext.summary,
+                recentTurnsUsed: memoryContext.recentTurnsUsed
+            },
             usage: {
                 tenantId,
                 retrievedChunks: hits.length,
                 searchMode: effectiveSearchMode,
-                vectorUsed: !!queryEmbedding && effectiveSearchMode !== "keyword"
+                vectorUsed: !!queryEmbedding && effectiveSearchMode !== "keyword",
+                fallbackUsed: generationResult.fallbackUsed,
+                responseChars,
+                promptChars: generationResult.promptChars,
+                promptCapped: generationResult.promptCapped,
+                latencyMs,
+                maxCompletionTokens: caps.maxCompletionTokens,
+                promptTokenCount: generationResult.promptTokenCount,
+                completionTokenCount: generationResult.completionTokenCount,
+                totalTokenCount: generationResult.totalTokenCount
             }
         };
         return {
@@ -217,7 +426,11 @@ async function chatHandler(request, context) {
         };
     }
     catch (error) {
-        context.error("Failed to answer chat request", error);
+        context.error("Failed to answer chat request", {
+            tenantId,
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined
+        });
         return {
             status: 500,
             jsonBody: {

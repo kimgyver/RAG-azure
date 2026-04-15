@@ -1,0 +1,175 @@
+{
+  "eTag": null,
+  "id": "subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/providers/Microsoft.CostManagement/query/90476a1f-c3c6-4d33-84dc-e35074431c12",
+  "location": null,
+  "name": "90476a1f-c3c6-4d33-84dc-e35074431c12",
+  "properties": {
+    "columns": [
+      {
+        "name": "Cost",
+        "type": "Number"
+      },
+      {
+        "name": "ResourceId",
+        "type": "String"
+      },
+      {
+        "name": "ServiceName",
+        "type": "String"
+      },
+      {
+        "name": "Currency",
+        "type": "String"
+      }
+    ],
+    "nextLink": null,
+    "rows": [
+      [
+        0.0,
+        "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourcegroups/ai_ragdemo-8e73d3fb-ai_722d36c2-6e45-44c0-a188-59e13e261c14_managed/providers/microsoft.operationalinsights/workspaces/managed-ragdemo-8e73d3fb-ai-ws",
+        "Log Analytics",
+        "NZD"
+      ],
+      [
+        47.0412505427703,
+        "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourcegroups/apim-lab-rg/providers/microsoft.search/searchservices/rag-search-core",
+        "Azure Cognitive Search",
+        "NZD"
+      ],
+      [
+        1.62396873643074e-05,
+        "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourcegroups/apim-lab-rg/providers/microsoft.servicebus/namespaces/core-bus",
+        "Service Bus",
+        "NZD"
+      ],
+      [
+        0.0,
+        "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourcegroups/apim-lab-rg/providers/microsoft.storage/storageaccounts/ragstorageforjason",
+        "Bandwidth",
+        "NZD"
+      ],
+      [
+        0.19876822752931,
+        "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourcegroups/apim-lab-rg/providers/microsoft.storage/storageaccounts/ragstorageforjason",
+        "Storage",
+        "NZD"
+      ],
+      [
+        0.000783480907659213,
+        "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourcegroups/appsvc_linux_newzealandnorth/providers/microsoft.documentdb/databaseaccounts/core-api",
+        "Azure Cosmos DB",
+        "NZD"
+      ],
+      [
+        0.0,
+        "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourcegroups/appsvc_linux_newzealandnorth/providers/microsoft.storage/storageaccounts/blobtestjason2",
+        "Bandwidth",
+        "NZD"
+      ],
+      [
+        0.00378365323419327,
+        "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourcegroups/appsvc_linux_newzealandnorth/providers/microsoft.storage/storageaccounts/blobtestjason2",
+        "Storage",
+        "NZD"
+      ],
+      [
+        0.0,
+        "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourcegroups/appsvc_linux_newzealandnorth/providers/microsoft.web/sites/blob-func-app-jason",
+        "Azure App Service",
+        "NZD"
+      ],
+      [
+        0.0,
+        "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourcegroups/appsvc_linux_newzealandnorth/providers/microsoft.web/sites/new-web-app1",
+        "Azure App Service",
+        "NZD"
+      ],
+      [
+        0.000208604414077219,
+        "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourcegroups/hellofunctionjason/providers/microsoft.storage/storageaccounts/hellofunctionjason",
+        "Storage",
+        "NZD"
+      ],
+      [
+        0.0,
+        "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourcegroups/hellofunctionjason/providers/microsoft.web/sites/hellofunction-jason",
+        "Azure App Service",
+        "NZD"
+      ],
+      [
+        1.66739036039948e-05,
+        "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourcegroups/ragdemo-8e73d3fb-rg/providers/microsoft.servicebus/namespaces/ragdemo-sb-8e73d3fb",
+        "Service Bus",
+        "NZD"
+      ],
+      [
+        0.0,
+        "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourcegroups/ragdemo-8e73d3fb-rg/providers/microsoft.storage/storageaccounts/ragdemo8e73d3fb",
+        "Bandwidth",
+        "NZD"
+      ],
+      [
+        0.00523149839339991,
+        "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourcegroups/ragdemo-8e73d3fb-rg/providers/microsoft.storage/storageaccounts/ragdemo8e73d3fb",
+        "Storage",
+        "NZD"
+      ],
+      [
+        0.0,
+        "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourcegroups/ragdemo-8e73d3fb-rg/providers/microsoft.web/sites/ragdemo-8e73d3fb-fn",
+        "Azure App Service",
+        "NZD"
+      ],
+      [
+        0.0,
+        "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourcegroups/ragdemo-8e73d3fb-rg/providers/microsoft.web/sites/ragdemo-8e73d3fb-fn",
+        "Functions",
+        "NZD"
+      ],
+      [
+        0.0,
+        "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourcegroups/terraform-hello-dev-rg/providers/microsoft.operationalinsights/workspaces/terraform-hello-dev-law",
+        "Log Analytics",
+        "NZD"
+      ],
+      [
+        0.0,
+        "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourcegroups/terraform-hello-dev-rg/providers/microsoft.storage/storageaccounts/stuyzqzirdmqg8y7wmsqfi",
+        "Bandwidth",
+        "NZD"
+      ],
+      [
+        0.0465829335649153,
+        "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourcegroups/terraform-hello-dev-rg/providers/microsoft.storage/storageaccounts/stuyzqzirdmqg8y7wmsqfi",
+        "Storage",
+        "NZD"
+      ],
+      [
+        0.0,
+        "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourcegroups/terraform-hello-dev-rg/providers/microsoft.web/sites/terraform-hello-dev-func",
+        "Azure App Service",
+        "NZD"
+      ],
+      [
+        0.0,
+        "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourcegroups/terraform-hello-dev-rg/providers/microsoft.web/sites/terraform-hello-dev-func",
+        "Functions",
+        "NZD"
+      ],
+      [
+        0.0,
+        "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourcegroups/tfstate-rg/providers/microsoft.storage/storageaccounts/tfstatejasonkim",
+        "Bandwidth",
+        "NZD"
+      ],
+      [
+        0.000336257056013895,
+        "/subscriptions/8c0e0504-ede7-43d5-a5dd-d33c2aea1c44/resourcegroups/tfstate-rg/providers/microsoft.storage/storageaccounts/tfstatejasonkim",
+        "Storage",
+        "NZD"
+      ]
+    ]
+  },
+  "sku": null,
+  "type": "Microsoft.CostManagement/query"
+}

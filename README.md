@@ -17,13 +17,15 @@ Azure 네이티브 구성(Blob, Functions, Service Bus, 선택적 Cosmos DB·AI 
 
 읽는 순서를 추천하면: **아키텍처** → **개발(로컬)** → **Azure 배포** → 나머지.
 
-| 문서 | 내용 |
-|------|------|
-| [docs/architecture.md](./docs/architecture.md) | 목표, 상위 아키텍처, SAS 직접 업로드, 단계별 데이터 흐름, Azure 서비스 역할 |
-| [docs/development.md](./docs/development.md) | 환경 변수 표, Step 1~10 구현 체크리스트, 로컬 실행·Search/Chat 디버깅 |
-| [docs/deployment-azure.md](./docs/deployment-azure.md) | Terraform 적용, **Functions publish(`dist` 포함)**, 프론트·CORS, **기존 AI Search 연결**, 카탈로그 **503/404** 트러블슈팅, 할 일 체크리스트 |
-| [docs/design-and-scope.md](./docs/design-and-scope.md) | 멀티테넌트·Cosmos 설계 메모, 청킹, Chat 호스팅 선택, IaC 순서, MVP 범위 |
-| [docs/security-and-pitch.md](./docs/security-and-pitch.md) | 보안·운영 메모, 인터뷰용 한 문장 피치 |
+| 문서                                                                           | 내용                                                                                                                                        |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| [docs/architecture.md](./docs/architecture.md)                                 | 목표, 상위 아키텍처, SAS 직접 업로드, 단계별 데이터 흐름, Azure 서비스 역할                                                                 |
+| [docs/chatbot-feature-architecture.md](./docs/chatbot-feature-architecture.md) | AWS 챗봇 아키텍처와 유사한 수준으로 정리한 Azure 챗봇 기능 다이어그램(Mermaid)                                                              |
+| [docs/development.md](./docs/development.md)                                   | 환경 변수 표, Step 1~10 구현 체크리스트, 로컬 실행·Search/Chat 디버깅                                                                       |
+| [docs/deployment-azure.md](./docs/deployment-azure.md)                         | Terraform 적용, **Functions publish(`dist` 포함)**, 프론트·CORS, **기존 AI Search 연결**, 카탈로그 **503/404** 트러블슈팅, 할 일 체크리스트 |
+| [docs/design-and-scope.md](./docs/design-and-scope.md)                         | 멀티테넌트·Cosmos 설계 메모, 청킹, Chat 호스팅 선택, IaC 순서, MVP 범위                                                                     |
+| [docs/security-and-pitch.md](./docs/security-and-pitch.md)                     | 보안·운영 메모, 인터뷰용 한 문장 피치                                                                                                       |
+| [docs/current-status-and-fixes.md](./docs/current-status-and-fixes.md)         | 최근 수정 내역, 원인 분석, 재발 방지, 운영 Runbook, 남은 개선 과제 통합 문서                                                                |
 
 ## 빠른 시작
 
@@ -52,9 +54,9 @@ npm run start
 
 ### Azure에 올릴 때 (한 줄 요약)
 
-1. `cd infra && terraform apply` — Storage·Service Bus·Function App 등 (**Cosmos / AI Search 리소스는 기본 생성 안 함**, 앱 설정도 꺼 둠).  
-2. `backend/functions-ingestion`에서 `npm run build` 후 `func azure functionapp publish …`.  
-3. 포털 또는 `extra_app_settings`로 **AI Search**(또는 Cosmos) 연결 — 안 하면 카탈로그가 **503** ([deployment-azure.md §4](./docs/deployment-azure.md#4-optional-backends-azure-ai-search-cosmos-db-openai)).  
+1. `cd infra && terraform apply` — Storage·Service Bus·Function App 등 (**Cosmos / AI Search 리소스는 기본 생성 안 함**, 앱 설정도 꺼 둠).
+2. `backend/functions-ingestion`에서 `npm run build` 후 `func azure functionapp publish …`.
+3. 포털 또는 `extra_app_settings`로 **AI Search**(또는 Cosmos) 연결 — 안 하면 카탈로그가 **503** ([deployment-azure.md §4](./docs/deployment-azure.md#4-optional-backends-azure-ai-search-cosmos-db-openai)).
 4. `frontend/.env`에 `VITE_UPLOAD_API_BASE_URL=https://<앱>.azurewebsites.net/api` 등 설정 후 빌드·호스팅.
 
 배포 후 화면 해석:
@@ -65,6 +67,30 @@ npm run start
 - 프론트 채팅 패널과 카탈로그 상단에도 현재 모드를 설명하는 안내 문구가 보이도록 해, 설정 상태를 화면에서 바로 읽을 수 있게 했다.
 
 전체 절차·트러블슈팅은 [docs/deployment-azure.md](./docs/deployment-azure.md)를 본다.
+
+### Search 비용 절감 운영 (원클릭)
+
+필요할 때만 Azure AI Search를 켜고, 안 쓰는 시간에는 끄려면 아래 스크립트를 사용한다.
+
+```bash
+# Search 생성(또는 재사용) + Function App SEARCH_* 자동 연결
+./scripts/search-on.sh
+
+# Search 비활성화 + Search 서비스 삭제
+./scripts/search-off.sh
+```
+
+옵션:
+
+```bash
+# 특정 이름/티어로 생성
+./scripts/search-on.sh rag-search-demo basic
+
+# 특정 이름 서비스 삭제
+./scripts/search-off.sh rag-search-demo
+```
+
+기본 Search 리소스 그룹은 `apim-lab-rg`이며, 필요하면 실행 시 `SEARCH_RG=<rg-name>`를 지정한다.
 
 ## 검토 메모 (README 분리 시)
 

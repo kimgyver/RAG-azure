@@ -10,6 +10,22 @@
         "isEnabled": true,
         "excludedTypes": "Request"
       }
+    },
+    "logLevel": {
+      "default": "None",
+      "Host.Singleton": "None",
+      "Host.Aggregator": "Warning",
+      "Host.Results": "None",
+      "Host.Triggers.Blobs": "None",
+      "Host.Triggers.Queues": "None",
+      "Host.Triggers.ServiceBus": "None",
+      "Azure.Core": "None",
+      "Azure.Storage": "None",
+      "Azure.Storage.Blobs": "None",
+      "Azure.Messaging.ServiceBus": "None",
+      "Microsoft.Azure.WebJobs.Extensions.ServiceBus": "None",
+      "Microsoft.Azure.WebJobs.Host.Singleton": "None",
+      "Function.chat": "Warning"
     }
   },
   "cors": {

@@ -9,6 +9,7 @@ import {
   deleteDocumentMetadata
 } from "../shared/documentMetadataStore.js";
 import {
+  countSearchChunksForDocument,
   deleteSearchChunksForDocument,
   searchEnabled
 } from "../shared/searchIndexStore.js";
@@ -22,6 +23,10 @@ function badRequest(message: string): HttpResponseInit {
     status: 400,
     jsonBody: { message }
   };
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 async function purgeDocumentHandler(
@@ -58,8 +63,20 @@ async function purgeDocumentHandler(
 
   try {
     let deletedChunks = 0;
+    let remainingSearchChunks = 0;
     if (searchEnabled()) {
       deletedChunks = await deleteSearchChunksForDocument(documentId, tenantId);
+      // Azure AI Search delete can be briefly eventually consistent.
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        remainingSearchChunks = await countSearchChunksForDocument(
+          documentId,
+          tenantId
+        );
+        if (remainingSearchChunks === 0) {
+          break;
+        }
+        await delay(250);
+      }
     }
 
     let cosmosDeleted = false;
@@ -80,9 +97,9 @@ async function purgeDocumentHandler(
         documentId,
         tenantId,
         deletedSearchChunks: deletedChunks,
+        remainingSearchChunks,
         cosmosDeleted,
-        note:
-          "Blob 원본은 삭제하지 않았습니다. 스토리지에서 직접 지우려면 포털 또는 별도 작업을 사용하세요."
+        note: "Blob 원본은 삭제하지 않았습니다. 스토리지에서 직접 지우려면 포털 또는 별도 작업을 사용하세요."
       },
       headers: { "content-type": "application/json" }
     };

@@ -50,3 +50,33 @@ variable "extra_app_settings" {
   description = "Extra Function App settings merged over defaults (e.g. OPENAI_API_KEY, SEARCH_* when you enable features)."
   default     = {}
 }
+
+variable "allowed_tenant_ids" {
+  type        = list(string)
+  description = "Production allowlist for tenant IDs. Empty means allow all (development only)."
+  default     = []
+}
+
+variable "enable_chat_alerts" {
+  type        = bool
+  description = "Enable Application Insights scheduled query alerts for chat failures and latency."
+  default     = false
+}
+
+variable "chat_alert_email_receivers" {
+  type        = list(string)
+  description = "Email addresses for chat alert notifications. Alerts are created only when this list is non-empty."
+  default     = []
+}
+
+variable "chat_failure_count_threshold" {
+  type        = number
+  description = "Alert when failed /api/chat requests in the last 10 minutes exceed this value."
+  default     = 3
+}
+
+variable "chat_latency_p95_threshold_ms" {
+  type        = number
+  description = "Alert when p95 /api/chat request latency (ms) over 10 minutes exceeds this value."
+  default     = 6000
+}
