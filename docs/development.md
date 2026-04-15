@@ -8,13 +8,13 @@
 
 ## 환경 플래그 빠른 참고
 
-| 변수 | 기본 | 의미 |
-|------|------|------|
-| `COSMOS_DB_ENABLED` | `false` | `true`일 때만 문서 메타데이터를 Cosmos에 쓰고, `GET /documents/{id}`가 동작한다. |
-| `SEARCH_ENABLED` | `false` | `true`일 때만 AI Search 인덱싱·`POST /chat` 검색이 동작한다. |
-| `EMBEDDING_ENABLED` | `false` | `true`일 때 청크·질문 임베딩 경로 사용(키/엔드포인트 필요). |
-| `OCR_ENABLED` | `true` | `false`면 래스터 이미지 OCR을 건너뛴다. |
-| `OCR_LANGS` | `eng` | Tesseract 언어 팩(예: `eng+kor`). |
+| 변수                 | 기본      | 의미                                                                                                                            |
+| -------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `COSMOS_DB_ENABLED`  | `false`   | `true`일 때만 문서 메타데이터를 Cosmos에 쓰고, `GET /documents/{id}`가 동작한다.                                                |
+| `SEARCH_ENABLED`     | `false`   | `true`일 때만 AI Search 인덱싱·`POST /chat` 검색이 동작한다.                                                                    |
+| `EMBEDDING_ENABLED`  | `false`   | `true`일 때 청크·질문 임베딩 경로 사용(키/엔드포인트 필요).                                                                     |
+| `OCR_ENABLED`        | `true`    | `false`면 래스터 이미지 OCR을 건너뛴다.                                                                                         |
+| `OCR_LANGS`          | `eng`     | Tesseract 언어 팩(예: `eng+kor`).                                                                                               |
 | `ALLOWED_TENANT_IDS` | 비어 있음 | 비어 있으면 개발 편의상 모든 `tenantId` 허용. 값이 있으면 쉼표 구분 목록만 허용(`uploads/create`, 챗, 상태 조회, 큐·Blob 경로). |
 
 프론트는 `VITE_TENANT_ID`로 기본 테넌트를 맞추고, UI에서 테넌트 문자열을 바꿀 수 있다.
