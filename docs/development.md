@@ -32,6 +32,19 @@
 - **Azure에 이미 배포한 Function App**이 있으면: Portal → 해당 앱 → **앱 키** → `_default` 복사.
 - 로컬에서만 빠르게 시험할 때는 **목록·삭제 API**는 위 카탈로그/퍼지처럼 키 없이 호출되도록 해 두었다(프론트도 키 없이 목록·삭제 가능).
 
+### 프론트 `npm run dev` 와 Functions 주소
+
+- `VITE_UPLOAD_API_BASE_URL` 을 **비워 두면**(또는 미설정) 개발 모드에서 기본값은 **`/api`** 이다. Vite(`vite.config.ts`)가 이를 `http://127.0.0.1:7071` 로 넘겨 **CORS·`localhost` vs `127.0.0.1` 차이**로 인한 `Failed to fetch` 를 줄인다.
+- 원격에 배포한 Functions만 쓸 때는 `.env`에 전체 URL을 넣는다(예: `https://<앱이름>.azurewebsites.net/api`).
+
+### 로컬 호스트가 `LeaseIdMismatch` / `WebJobs.Internal.Blobs.Listener` 로 죽을 때
+
+`AzureWebJobsStorage` 가 가리키는 **같은 스토리지**에 대해 **Functions 호스트가 두 개 이상** 떠 있거나, 이전 프로세스가 비정상 종료되면 Blob **싱글톤 잠금(리스)** 이 깨지며 409가 나고 호스트가 종료될 수 있다.
+
+- **한 번에 `func start` / `npm run start` 는 하나만** 띄운다. 다른 터미널·VS Code 디버그 세션도 같은 앱이면 끈다.
+- Azurite를 쓰면 **Azurite를 재시작**하거나, 로컬 전용으로 `UseDevelopmentStorage=true` 만 쓰는지 확인한다.
+- 클라우드 스토리지 계정을 여러 로컬 세션이 공유하지 않도록 한다.
+
 ## 권장 구현 순서
 
 ### Step 1: 프론트엔드 업로드 화면과 채팅 화면

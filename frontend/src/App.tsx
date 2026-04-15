@@ -81,11 +81,11 @@ type RuntimeConfigSnapshot = {
 function searchModeLabel(mode: RuntimeConfigSnapshot["chatSearchMode"]): string {
   switch (mode) {
     case "keyword":
-      return "키워드";
+      return "keyword";
     case "vector":
-      return "벡터";
+      return "vector";
     default:
-      return "하이브리드";
+      return "hybrid";
   }
 }
 
@@ -122,42 +122,42 @@ const initialChatMessages: ChatMessage[] = [
     id: "assistant-1",
     role: "assistant",
     content:
-      "같은 테넌트로 올린 문서만 검색해 답합니다. 먼저 왼쪽에서 업로드한 뒤 질문을 입력하세요."
+      "I only search documents uploaded for this tenant. Upload on the left, then ask a question."
   }
 ];
 
 const statusLabel: Record<DocumentStatus, string> = {
-  waiting: "대기",
-  uploading: "업로드 중",
-  queued: "큐 등록됨",
-  processing: "처리 중",
-  chunked: "청킹 완료",
-  skipped: "건너뜀",
-  indexed: "인덱싱 완료",
-  failed: "실패"
+  waiting: "Waiting",
+  uploading: "Uploading",
+  queued: "Queued",
+  processing: "Processing",
+  chunked: "Chunked",
+  skipped: "Skipped",
+  indexed: "Indexed",
+  failed: "Failed"
 };
 
 function relativeTimeLabel(input: string): string {
   const deltaMs = Date.now() - new Date(input).getTime();
   if (!Number.isFinite(deltaMs) || deltaMs < 0) {
-    return "방금 전";
+    return "just now";
   }
 
   const minutes = Math.floor(deltaMs / 60000);
   if (minutes <= 0) {
-    return "방금 전";
+    return "just now";
   }
   if (minutes < 60) {
-    return `${minutes}분 전`;
+    return `${minutes}m ago`;
   }
 
   const hours = Math.floor(minutes / 60);
   if (hours < 24) {
-    return `${hours}시간 전`;
+    return `${hours}h ago`;
   }
 
   const days = Math.floor(hours / 24);
-  return `${days}일 전`;
+  return `${days}d ago`;
 }
 
 function App() {
@@ -174,7 +174,7 @@ function App() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadState, setUploadState] = useState<UploadState>("idle");
   const [uploadMessage, setUploadMessage] = useState<string>(
-    "파일을 선택하고 업로드를 시작하세요."
+    "Choose a file and start upload."
   );
   const [trackedDocument, setTrackedDocument] = useState<{
     documentId: string;
@@ -193,11 +193,17 @@ function App() {
   const [catalogMessage, setCatalogMessage] = useState<string>("");
   const [purgeBusyId, setPurgeBusyId] = useState<string | null>(null);
 
-  const uploadApiBaseUrl = useMemo(
-    () =>
-      import.meta.env.VITE_UPLOAD_API_BASE_URL ?? "http://localhost:7071/api",
-    []
-  );
+  const uploadApiBaseUrl = useMemo(() => {
+    const fromEnv = import.meta.env.VITE_UPLOAD_API_BASE_URL?.trim();
+    if (fromEnv) {
+      return fromEnv.replace(/\/$/, "");
+    }
+    // `npm run dev`: Vite proxies `/api` → 127.0.0.1:7071 (avoids CORS / host mismatch)
+    if (import.meta.env.DEV) {
+      return "/api";
+    }
+    return "http://localhost:7071/api";
+  }, []);
 
   const uploadApiKey = useMemo(
     () => import.meta.env.VITE_UPLOAD_API_KEY?.trim() ?? "",
@@ -230,13 +236,13 @@ function App() {
       setCatalogMessage(
         `Cosmos ${payload.sources.cosmos ? "ON" : "OFF"} · Search ${
           payload.sources.search ? "ON" : "OFF"
-        } · ${payload.documents.length}건`
+        } · ${payload.documents.length} doc(s)`
       );
     } catch (error) {
       setCatalogRows([]);
       setCatalogStatus("error");
       setCatalogMessage(
-        error instanceof Error ? error.message : "목록을 불러오지 못했습니다."
+        error instanceof Error ? error.message : "Could not load catalog."
       );
     }
   }, [effectiveTenantId, uploadApiBaseUrl, uploadApiKey]);
@@ -327,18 +333,18 @@ function App() {
         );
 
         if (payload.status === "processing") {
-          setUploadMessage("문서를 처리 중입니다...");
+          setUploadMessage("Processing document...");
         } else if (payload.status === "chunked") {
-          setUploadMessage("문서 텍스트 추출과 청킹이 완료되었습니다.");
+          setUploadMessage("Text extraction and chunking complete.");
         } else if (payload.status === "indexed") {
-          setUploadMessage("문서 인덱싱이 완료되었습니다.");
+          setUploadMessage("Indexing complete.");
         } else if (payload.status === "skipped") {
-          setUploadMessage("현재 문서 형식은 다음 단계에서 처리됩니다.");
+          setUploadMessage("This format is handled in a later step.");
         } else if (payload.status === "failed") {
           setUploadMessage(
             payload.errorMessage
-              ? `문서 처리 실패: ${payload.errorMessage}`
-              : "문서 처리에 실패했습니다."
+              ? `Processing failed: ${payload.errorMessage}`
+              : "Document processing failed."
           );
         }
 
@@ -346,7 +352,7 @@ function App() {
           setTrackedDocument(null);
         }
       } catch {
-        // 폴링 실패는 다음 주기에 재시도한다.
+        // Polling errors retry on the next interval.
       }
     };
 
@@ -366,14 +372,14 @@ function App() {
     setSelectedFile(file);
     setUploadState("idle");
     setUploadMessage(
-      file ? `${file.name} 파일이 선택되었습니다.` : "파일을 선택해 주세요."
+      file ? `${file.name} selected.` : "Please choose a file."
     );
   };
 
   const startUpload = async () => {
     if (!selectedFile) {
       setUploadState("error");
-      setUploadMessage("먼저 업로드할 파일을 선택해 주세요.");
+      setUploadMessage("Please choose a file to upload first.");
       return;
     }
 
@@ -382,7 +388,7 @@ function App() {
       id: tempId,
       fileName: selectedFile.name,
       status: "uploading",
-      updatedAt: "방금 전",
+      updatedAt: "just now",
       tenantId: effectiveTenantId
     };
 
@@ -390,7 +396,7 @@ function App() {
 
     try {
       setUploadState("requesting-sas");
-      setUploadMessage("SAS URL을 발급받는 중입니다...");
+      setUploadMessage("Requesting SAS URL...");
 
       const sasResponse = await fetch(`${uploadApiBaseUrl}/uploads/create`, {
         method: "POST",
@@ -408,16 +414,16 @@ function App() {
       if (!sasResponse.ok) {
         const responseText = await sasResponse.text();
         throw new Error(
-          `SAS URL 발급 실패 (${sasResponse.status}) ${responseText}`
+          `Failed to get SAS URL (${sasResponse.status}) ${responseText}`
         );
       }
 
       const sasPayload = (await sasResponse.json()) as CreateUploadResponse;
 
       setUploadState("uploading");
-      setUploadMessage("Blob Storage로 직접 업로드 중입니다...");
+      setUploadMessage("Uploading directly to Blob Storage...");
 
-      // 개발 모드: Azurite CORS 우회를 위해 Vite proxy 경유 (상대 경로 사용)
+      // Dev: use Vite proxy for Azurite (relative path) to avoid CORS on blob PUT
       const effectiveUploadUrl =
         import.meta.env.DEV && sasPayload.uploadUrl.includes("127.0.0.1:10000")
           ? (() => {
@@ -438,7 +444,7 @@ function App() {
       if (!uploadResponse.ok) {
         const responseText = await uploadResponse.text();
         throw new Error(
-          `Blob direct upload 실패 (${uploadResponse.status}) ${responseText}`
+          `Blob direct upload failed (${uploadResponse.status}) ${responseText}`
         );
       }
 
@@ -450,7 +456,7 @@ function App() {
                 id: sasPayload.documentId,
                 tenantId: sasPayload.tenantId,
                 status: "queued",
-                updatedAt: "방금 전"
+                updatedAt: "just now"
               }
             : item
         )
@@ -460,7 +466,7 @@ function App() {
         tenantId: sasPayload.tenantId
       });
       setUploadState("done");
-      setUploadMessage("업로드 완료. 큐 등록 대기 상태로 표시됩니다.");
+      setUploadMessage("Upload complete. Status will show as queued.");
     } catch (error) {
       setDocuments(prev =>
         prev.map(item =>
@@ -469,9 +475,9 @@ function App() {
       );
       setUploadState("error");
       const errorMessage =
-        error instanceof Error ? error.message : "알 수 없는 오류";
+        error instanceof Error ? error.message : "Unknown error";
       setUploadMessage(
-        `업로드 오류: ${errorMessage} (API: ${uploadApiBaseUrl}/uploads/create)`
+        `Upload error: ${errorMessage} (API: ${uploadApiBaseUrl}/uploads/create)`
       );
     }
   };
@@ -507,7 +513,7 @@ function App() {
 
       if (!response.ok) {
         const responseText = await response.text();
-        throw new Error(`채팅 요청 실패 (${response.status}) ${responseText}`);
+        throw new Error(`Chat request failed (${response.status}) ${responseText}`);
       }
 
       const payload = (await response.json()) as ChatResponse;
@@ -517,21 +523,21 @@ function App() {
         content: payload.answer,
         citations: payload.citations.map(
           citation =>
-            `${citation.fileName} · 청크 ${citation.chunkIndex + 1}`
+            `${citation.fileName} · chunk ${citation.chunkIndex + 1}`
         )
       };
 
       setChatMessages(prev => [...prev, assistantMessage]);
     } catch (error) {
       const errorMessage =
-        error instanceof Error ? error.message : "알 수 없는 오류";
+        error instanceof Error ? error.message : "Unknown error";
 
       setChatMessages(prev => [
         ...prev,
         {
           id: `assistant-error-${Date.now()}`,
           role: "assistant",
-          content: `질문을 처리하지 못했습니다. ${errorMessage}`
+          content: `Could not process your question. ${errorMessage}`
         }
       ]);
     } finally {
@@ -541,7 +547,7 @@ function App() {
 
   const handlePurgeDocument = async (documentId: string) => {
     const confirmed = window.confirm(
-      `문서 ID "${documentId}"\n\n이 테넌트의 AI Search 청크와 Cosmos 메타데이터를 삭제합니다. Blob 원본은 남습니다. 계속할까요?`
+      `Document ID "${documentId}"\n\nThis removes AI Search chunks and Cosmos metadata for this tenant. The blob in storage is left unchanged. Continue?`
     );
     if (!confirmed) {
       return;
@@ -566,7 +572,7 @@ function App() {
       await loadCatalog();
     } catch (error) {
       window.alert(
-        error instanceof Error ? error.message : "삭제에 실패했습니다."
+        error instanceof Error ? error.message : "Delete failed."
       );
     } finally {
       setPurgeBusyId(null);
@@ -577,68 +583,66 @@ function App() {
     <div className="app-shell">
       <header className="hero">
         <div>
-          <p className="eyebrow">Azure 네이티브 RAG 데모</p>
-          <h1>문서 업로드부터 검색형 챗봇까지 한 화면에서 확인하는 첫 셸</h1>
+          <p className="eyebrow">Azure-native RAG demo</p>
+          <h1>Upload, index, and chat in one screen</h1>
           <p className="hero-copy">
-            SAS로 Blob에 직접 올리고, 큐로 비동기 처리한 뒤 Azure AI Search로
-            찾고, 설정에 따라 임베딩·하이브리드 검색과 생성형 답변까지
-            이어볼 수 있다. 오른쪽 박스는 실제 Functions 환경 변수와 맞춰
-            갱신된다.{" "}
-            <code className="inline-code">ALLOWED_TENANT_IDS</code>가 비어
-            있으면 아래 테넌트는 자유 입력이고, 값이 있으면 목록에 있는 ID만
-            통과한다.
+            Upload to Blob with a SAS token, process asynchronously via a queue,
+            retrieve with Azure AI Search, and—depending on configuration—try
+            embeddings, hybrid search, and generative answers. The box on the
+            right reflects your Functions deployment flags. If{" "}
+            <code className="inline-code">ALLOWED_TENANT_IDS</code> is empty,
+            any tenant ID is accepted; otherwise only listed IDs are allowed.
           </p>
         </div>
         <div className="hero-stats">
           {runtimeConfigStatus === "loading" ? (
             <div>
-              <span>백엔드 설정</span>
-              <strong>불러오는 중…</strong>
+              <span>Backend flags</span>
+              <strong>Loading…</strong>
             </div>
           ) : runtimeConfigStatus === "error" || !runtimeConfig ? (
             <div>
-              <span>백엔드 설정</span>
-              <strong>읽기 실패</strong>
+              <span>Backend flags</span>
+              <strong>Could not load</strong>
               <p className="hero-stat-sub">
-                Functions가{" "}
-                <code className="inline-code">VITE_UPLOAD_API_BASE_URL</code>에
-                떠 있는지, 주소가 맞는지 확인하세요. 업로드·챗은 별도로{" "}
-                <code className="inline-code">VITE_UPLOAD_API_KEY</code>가
-                필요할 수 있습니다.
+                Check that Functions is reachable at{" "}
+                <code className="inline-code">VITE_UPLOAD_API_BASE_URL</code>.
+                Upload and chat may also need{" "}
+                <code className="inline-code">VITE_UPLOAD_API_KEY</code>.
               </p>
             </div>
           ) : (
             <>
               <div>
-                <span>Cosmos · 문서 상태</span>
-                <strong>{runtimeConfig.cosmosDbEnabled ? "켜짐" : "꺼짐"}</strong>
+                <span>Cosmos · document state</span>
+                <strong>{runtimeConfig.cosmosDbEnabled ? "On" : "Off"}</strong>
                 <p className="hero-stat-sub">
                   {runtimeConfig.tenantAllowlistActive
-                    ? "허용 테넌트만 처리 (ALLOWED_TENANT_IDS)"
-                    : "테넌트 제한 없음 · 로컬 기본"}
+                    ? "Allowlisted tenants only (ALLOWED_TENANT_IDS)"
+                    : "No tenant restriction · local default"}
                 </p>
               </div>
               <div>
-                <span>AI Search · 인덱싱</span>
-                <strong>{runtimeConfig.searchEnabled ? "켜짐" : "꺼짐"}</strong>
+                <span>AI Search · indexing</span>
+                <strong>{runtimeConfig.searchEnabled ? "On" : "Off"}</strong>
                 <p className="hero-stat-sub">
-                  임베딩{" "}
-                  {runtimeConfig.embeddingPipelineEnabled ? "사용" : "미사용"} ·
-                  챗 {searchModeLabel(runtimeConfig.chatSearchMode)} · 이미지 OCR{" "}
-                  {runtimeConfig.ocrEnabled ? "사용" : "꺼짐"}
+                  Embeddings{" "}
+                  {runtimeConfig.embeddingPipelineEnabled ? "on" : "off"} · chat{" "}
+                  {searchModeLabel(runtimeConfig.chatSearchMode)} · image OCR{" "}
+                  {runtimeConfig.ocrEnabled ? "on" : "off"}
                 </p>
               </div>
               <div>
-                <span>챗 답변</span>
+                <span>Chat answers</span>
                 <strong>
                   {runtimeConfig.openAiChatConfigured
-                    ? "생성형"
-                    : "검색 요약만"}
+                    ? "Generative"
+                    : "Search snippets only"}
                 </strong>
                 <p className="hero-stat-sub">
                   {runtimeConfig.openAiChatConfigured
-                    ? "OPENAI_API_KEY 가 있어 GPT로 생성"
-                    : "OPENAI_API_KEY 없음 — 인덱스 스니펫 위주"}
+                    ? "OPENAI_API_KEY set — GPT-style answers"
+                    : "No OPENAI_API_KEY — index snippets only"}
                 </p>
               </div>
             </>
@@ -646,49 +650,62 @@ function App() {
         </div>
       </header>
 
+      <div className="tenant-context-bar">
+        <div className="tenant-context-row">
+          <label className="tenant-context-label" htmlFor="tenant-id">
+            Tenant ID
+          </label>
+          <input
+            id="tenant-id"
+            className="tenant-context-input"
+            type="text"
+            value={tenantId}
+            onChange={event => setTenantId(event.target.value)}
+            placeholder={defaultTenantId}
+            spellCheck={false}
+            autoComplete="off"
+            aria-describedby="tenant-context-desc"
+          />
+          <span className="tenant-context-sep" aria-hidden="true">
+            →
+          </span>
+          <code className="tenant-context-id" title="Value sent to the API">
+            {effectiveTenantId}
+          </code>
+        </div>
+        <p id="tenant-context-desc" className="tenant-context-desc">
+          Upload, blob path, indexing, chat retrieval, catalog, and purge all use
+          the <strong>same</strong> tenant. Leave blank for default{" "}
+          <code className="inline-code">{defaultTenantId}</code> from{" "}
+          <code className="inline-code">VITE_TENANT_ID</code>.
+        </p>
+      </div>
+
       <main className="main-stack">
         <div className="workspace-grid">
         <section className="panel panel-upload">
           <div className="panel-header">
             <div>
-              <p className="panel-kicker">업로드</p>
-              <h2>문서 업로드</h2>
+              <p className="panel-kicker">Upload</p>
+              <h2>Document upload</h2>
             </div>
-            <span className="panel-tag">SAS 직접 업로드</span>
+            <span className="panel-tag">SAS direct upload</span>
           </div>
 
           <label className="dropzone" htmlFor="file-upload">
             <input id="file-upload" type="file" onChange={onFileChange} />
             <span className="dropzone-icon">+</span>
-            <strong>PDF, PNG, JPG 문서를 선택</strong>
+            <strong>Choose PDF, PNG, or JPG</strong>
             <p>
-              업로드 버튼을 누르면 SAS URL을 발급받은 뒤 브라우저에서 Blob
-              Storage로 직접 업로드한다. PNG·JPEG 등은 서버에서 OCR로 텍스트를
-              뽑을 수 있다.
+              After you start upload, the app requests a SAS URL and the browser
+              PUTs the file to Blob Storage. PNG and JPEG can be OCR’d on the
+              server for text.
             </p>
-          </label>
-
-          <label className="tenant-field" htmlFor="tenant-id">
-            <span>테넌트 ID</span>
-            <input
-              id="tenant-id"
-              type="text"
-              value={tenantId}
-              onChange={event => setTenantId(event.target.value)}
-              placeholder={defaultTenantId}
-              spellCheck={false}
-              autoComplete="off"
-            />
-            <small>
-              비우면 <strong>{defaultTenantId}</strong>가 쓰이며, 그 값은{" "}
-              <code className="inline-code">VITE_TENANT_ID</code>(없으면 위
-              기본)에서 온다.
-            </small>
           </label>
 
           <div className="upload-actions">
             <button type="button" onClick={startUpload}>
-              업로드 시작
+              Start upload
             </button>
             <p className={`upload-hint upload-${uploadState}`}>
               {uploadMessage}
@@ -697,23 +714,19 @@ function App() {
 
           <div className="upload-meta-grid">
             <div className="meta-card">
-              <span>적용 테넌트</span>
-              <strong>{effectiveTenantId}</strong>
-            </div>
-            <div className="meta-card">
-              <span>Blob 경로 접두</span>
+              <span>Blob path prefix</span>
               <strong>{effectiveTenantId}/YYYY/MM/</strong>
             </div>
             <div className="meta-card">
-              <span>API 베이스 URL</span>
+              <span>API base URL</span>
               <strong>{uploadApiBaseUrl}</strong>
             </div>
           </div>
 
           <div className="timeline-card">
             <div className="timeline-header">
-              <h3>처리 상태</h3>
-              <span>최근 업로드 문서</span>
+              <h3>Processing status</h3>
+              <span>Recent uploads</span>
             </div>
 
             <ul className="document-list">
@@ -735,10 +748,10 @@ function App() {
         <section className="panel panel-chat">
           <div className="panel-header">
             <div>
-              <p className="panel-kicker">채팅</p>
-              <h2>RAG 챗봇</h2>
+              <p className="panel-kicker">Chat</p>
+              <h2>RAG chatbot</h2>
             </div>
-            <span className="panel-tag">테넌트 단위 검색</span>
+            <span className="panel-tag">Tenant-scoped search</span>
           </div>
 
           <div className="chat-stream">
@@ -748,11 +761,11 @@ function App() {
                 className={`message message-${message.role}`}
               >
                 <span className="message-role">
-                  {message.role === "user" ? "사용자" : "어시스턴트"}
+                  {message.role === "user" ? "You" : "Assistant"}
                 </span>
                 <p>{message.content}</p>
                 {message.citations?.length ? (
-                  <small>근거: {message.citations.join(" / ")}</small>
+                  <small>Sources: {message.citations.join(" / ")}</small>
                 ) : null}
               </article>
             ))}
@@ -766,23 +779,23 @@ function App() {
             }}
           >
             <label className="composer-label" htmlFor="chat-input">
-              질문 입력
+              Your question
             </label>
             <textarea
               id="chat-input"
               rows={4}
-              placeholder="예: 계약서에서 해지 조항이 어떻게 되어 있어?"
+              placeholder="e.g. What does the contract say about termination?"
               value={chatInput}
               onChange={event => setChatInput(event.target.value)}
               disabled={chatPending}
             />
             <div className="composer-actions">
               <div className="composer-hint">
-                답은 먼저 Search로 근거 청크를 고른 뒤 만들어진다. 생성형 여부는
-                위쪽「챗 답변」칸과 같다.
+                Answers use retrieved chunks from Search first; generative mode
+                matches the “Chat answers” flag above.
               </div>
               <button type="submit" disabled={chatPending || !chatInput.trim()}>
-                {chatPending ? "질문 처리 중..." : "질문 보내기"}
+                {chatPending ? "Working…" : "Send question"}
               </button>
             </div>
           </form>
@@ -792,12 +805,12 @@ function App() {
         <section className="panel catalog-panel" aria-labelledby="catalog-heading">
           <div className="panel-header">
             <div>
-              <p className="panel-kicker">관리</p>
-              <h2 id="catalog-heading">Cosmos · Search 문서 목록</h2>
+              <p className="panel-kicker">Admin</p>
+              <h2 id="catalog-heading">Cosmos · Search document catalog</h2>
             </div>
             <div className="catalog-actions">
               <button type="button" onClick={() => void loadCatalog()}>
-                목록 새로고침
+                Refresh list
               </button>
             </div>
           </div>
@@ -807,26 +820,26 @@ function App() {
             } ${catalogStatus === "ok" ? "catalog-ok" : ""}`}
           >
             {catalogStatus === "loading"
-              ? "목록을 불러오는 중…"
-              : catalogMessage || "현재 테넌트 기준으로 병합된 문서 행입니다."}
+              ? "Loading catalog…"
+              : catalogMessage || "Merged rows for the current tenant."}
           </p>
           <div className="catalog-table-wrap">
             <table className="catalog-table">
               <thead>
                 <tr>
                   <th scope="col">documentId</th>
-                  <th scope="col">파일</th>
+                  <th scope="col">File</th>
                   <th scope="col">Cosmos</th>
-                  <th scope="col">Search 청크</th>
-                  <th scope="col">삭제</th>
+                  <th scope="col">Search chunks</th>
+                  <th scope="col">Delete</th>
                 </tr>
               </thead>
               <tbody>
                 {catalogRows.length === 0 && catalogStatus === "ok" ? (
                   <tr>
                     <td colSpan={5} className="catalog-empty">
-                      표시할 문서가 없습니다. 업로드하거나 다른 테넌트를
-                      선택해 보세요.
+                      No documents for this tenant. Upload files or switch
+                      tenant.
                     </td>
                   </tr>
                 ) : null}
@@ -841,7 +854,7 @@ function App() {
                           <br />
                           <small className="catalog-sub">
                             {row.cosmos.chunkCount != null
-                              ? `청크 ${row.cosmos.chunkCount} · `
+                              ? `${row.cosmos.chunkCount} chunks · `
                               : ""}
                             {row.cosmos.updatedAt?.slice(0, 19) ?? ""}
                           </small>
@@ -852,7 +865,7 @@ function App() {
                     </td>
                     <td>
                       {row.search ? (
-                        <>{row.search.chunkCount}개</>
+                        <>{row.search.chunkCount} chunks</>
                       ) : (
                         <span className="muted">—</span>
                       )}
@@ -867,8 +880,8 @@ function App() {
                         onClick={() => void handlePurgeDocument(row.documentId)}
                       >
                         {purgeBusyId === row.documentId
-                          ? "삭제 중…"
-                          : "데이터 삭제"}
+                          ? "Deleting…"
+                          : "Purge index data"}
                       </button>
                     </td>
                   </tr>
@@ -877,8 +890,8 @@ function App() {
             </table>
           </div>
           <p className="catalog-footnote">
-            삭제 시 AI Search 청크와 Cosmos 메타데이터만 제거합니다. Blob
-            원본은 그대로입니다.
+            Purge removes AI Search chunks and Cosmos metadata only. Blobs in
+            storage are not deleted.
           </p>
         </section>
       </main>

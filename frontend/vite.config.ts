@@ -6,7 +6,12 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // 개발 중 Azurite CORS 우회: Blob PUT을 Vite proxy 경유
+      // Proxy Functions: browser calls Vite origin; forward to 7071 (CORS bypass).
+      "/api": {
+        target: "http://127.0.0.1:7071",
+        changeOrigin: true
+      },
+      // Proxy Azurite blob PUT through Vite (CORS bypass in dev).
       "/devstoreaccount1": {
         target: "http://127.0.0.1:10000",
         changeOrigin: true
