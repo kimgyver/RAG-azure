@@ -111,6 +111,7 @@ npm run dev
 
 - `backend/functions-ingestion/local.settings.json` **이 이미 있으면** 이 단계를 건너뛴다. (`cp`로 예시를 덮어쓰면 기존 비밀·설정이 사라진다.)
 - **없을 때만** 예시를 복사한 뒤 값을 채운다.
+- `local.settings.json`에는 키/연결 문자열 등 비밀값이 들어가므로 git에 커밋하지 않는다(로컬 전용 파일).
 
 ```bash
 cd backend/functions-ingestion
@@ -248,7 +249,24 @@ tenant 필터 기반 하이브리드 검색과 답변 생성을 구현한다.
 - Functions 로그에 `Chat search executed.` 항목으로 configured/effective mode, vectorUsed, retrievedChunks 출력
 - `OPENAI_API_KEY` 설정 시 Azure OpenAI 또는 OpenAI GPT로 최종 답변 생성
 - 응답에 answer, citations(문서 출처), retrievedChunks 수 포함
-- 미설정 환경에서는 검색 결과 스니펫 요약으로 graceful fallback 동작
+- 미설정 환경에서는 검색 결과 스니펫 기반의 search-only fallback 답변으로 동작한다. 이는 오류가 아니라, LLM 연결 전에도 검색 품질과 tenant 필터를 검증할 수 있도록 한 운영 모드다.
+- 프론트 채팅 패널은 이 상태를 그대로 드러내도록 `Search-only fallback mode` 또는 `Generative answer mode` 배너를 표시한다.
+- 현재 구현은 "질문 + 검색된 문서 청크"를 프롬프트로 사용하며, 이전 턴의 chat history를 별도로 누적해 프롬프트에 넣지는 않는다.
+
+대화 이력 포함 여부(현재 동작):
+
+- 현재 `POST /api/chat`은 요청 body로 `tenantId`, `question`만 받는다.
+- OpenAI 호출 시 메시지는 system + user(문서 컨텍스트 + 현재 질문) 형태로 구성된다.
+- 즉, 멀티턴 맥락 유지가 필요하면 chat history 저장/요약/전달 로직을 별도로 추가해야 한다.
+
+기존 Search 인덱스만 있고 Cosmos 메타데이터가 비어 있는 문서를 채우려면:
+
+```bash
+cd backend/functions-ingestion
+npm run cosmos:backfill
+```
+
+스크립트는 `local.settings.json` 또는 현재 셸 환경의 `SEARCH_*`, `COSMOS_*` 값을 읽어 Search 문서를 스캔하고 Cosmos에 문서 메타데이터를 upsert 한다. 특정 tenant만 처리하거나 미리 결과만 보고 싶으면 `BACKFILL_TENANT_ID`, `BACKFILL_DRY_RUN=true` 를 함께 준다.
 
 비교 테스트 방법:
 
@@ -266,6 +284,25 @@ tenant 필터 기반 하이브리드 검색과 답변 생성을 구현한다.
 서비스 경계가 안정되면 인프라를 코드로 옮긴다. 이 레포에는 `infra/`에 Azure 스택(Resource Group, Storage, Service Bus, Linux Function App, Application Insights)용 Terraform이 있다. **Cosmos / AI Search / OpenAI 리소스는 Terraform이 기본 생성하지 않으며**, Function 앱 설정도 꺼 둔다 — 클라우드에서 Search·챗·카탈로그를 쓰려면 [deployment-azure.md §4](./deployment-azure.md#4-optional-backends-azure-ai-search-cosmos-db-openai)대로 연결한다.
 
 코드 배포: `backend/functions-ingestion`에서 **`npm run build` 후** `func azure functionapp publish …` ([publish / `dist` / 404](./deployment-azure.md#function-routes-return-404-after-publish)). 전체 순서·체크리스트는 [deployment-azure.md](./deployment-azure.md) 본문과 [Post-deploy checklist](./deployment-azure.md#5-post-deploy-checklist)를 본다.
+
+실무에서 자주 헷갈리는 포인트:
+
+- `terraform apply`: 리소스(인프라) 생성/변경/삭제 단계
+- `func azure functionapp publish`: 이미 생성된 Function App에 코드만 재배포
+- 코드만 바뀐 경우에는 일반적으로 `publish`만 반복하고, 인프라나 앱 설정 변경이 있을 때 `terraform apply`를 실행한다.
+- `backend/functions-ingestion/local.settings.json`은 로컬 실행 전용이다. Azure에 배포된 Function App은 Portal/ARM/Terraform app settings 값을 사용한다.
+
+`infra/outputs.tf`의 주요 활용:
+
+- `function_app_name`: `func azure functionapp publish "$(terraform -chdir=../../infra output -raw function_app_name)"` 형태로 배포 대상 이름을 자동 주입
+- `api_base_url`: 프론트 `.env`의 `VITE_UPLOAD_API_BASE_URL`에 사용
+- `storage_account_name`, `servicebus_namespace`: 운영 점검/진단 시 식별자 확인
+
+Storage 용어 정리(공식 명칭):
+
+- Storage Account: 최상위 스토리지 리소스(이 레포에서는 `project_name + random suffix` 규칙)
+- Storage Container: Blob 저장 논리 단위(이 레포 기본값은 `uploads`)
+- 구조는 `Storage Account > Container > Blob`로 이해하면 된다.
 
 ### Step 10: 관측성과 안정성 보강
 

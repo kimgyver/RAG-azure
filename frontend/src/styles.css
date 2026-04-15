@@ -153,6 +153,11 @@ button:hover {
   letter-spacing: normal;
 }
 
+.hero-stat-sub-secondary {
+  margin-top: 0.25rem;
+  opacity: 0.88;
+}
+
 .tenant-context-bar {
   margin: 0 auto 0.25rem;
   width: min(1180px, calc(100% - 2rem));
@@ -415,6 +420,34 @@ button:hover {
   gap: 1rem;
 }
 
+.mode-callout {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 0.95rem 1rem;
+  background: var(--panel-strong);
+}
+
+.mode-callout strong {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.mode-callout p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.mode-callout-warning {
+  background: rgba(255, 240, 204, 0.55);
+  border-color: rgba(200, 132, 47, 0.28);
+}
+
+.mode-callout-ok {
+  background: rgba(220, 238, 229, 0.62);
+  border-color: rgba(22, 99, 77, 0.18);
+}
+
 .chat-stream {
   padding: 1rem;
   display: grid;
@@ -489,6 +522,12 @@ button:hover {
 
 .catalog-meta.catalog-ok {
   color: var(--accent);
+}
+
+.catalog-mode-note {
+  margin: 0 0 0.9rem;
+  font-size: 0.86rem;
+  color: var(--muted);
 }
 
 .catalog-table-wrap {

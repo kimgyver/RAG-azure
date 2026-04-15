@@ -1,58 +1,62 @@
-# Azure deployment (Terraform + Functions publish)
 
-[← README](../README.md) · [Development](./development.md)
+# Azure 배포 (Terraform + Functions publish)
 
-## Contents
+[← README](../README.md) · [개발 가이드](./development.md)
 
-1. [Prerequisites](#prerequisites)  
-2. [1. Provision infrastructure](#1-provision-infrastructure)  
-3. [2. Publish Function App code](#2-publish-function-app-code)  
-4. [3. Point the frontend at Azure](#3-point-the-frontend-at-azure)  
-5. [4. Optional backends: Search, Cosmos, OpenAI](#4-optional-backends-azure-ai-search-cosmos-db-openai)  
-6. [5. Post-deploy checklist](#5-post-deploy-checklist)  
-7. [Troubleshooting](#troubleshooting) — [404 / publish](#function-routes-return-404-after-publish), [503 catalog](#document-catalog-returns-503), [CORS](#browser-shows-failed-to-fetch-cors), [App Service quota](#app-service-plan-quota-is-zero)  
-8. [Destroy](#destroy)
+## 목차
 
-### What Terraform creates (and does not)
+1. [사전 준비](#사전-준비)
+2. [1. 인프라 프로비저닝](#1-인프라-프로비저닝)
+3. [2. Function App 코드 배포](#2-function-app-코드-배포)
+4. [3. 프론트엔드 Azure 연결](#3-프론트엔드-azure-연결)
+5. [4. 선택적 백엔드: Search, Cosmos, OpenAI](#4-선택적-백엔드-azure-ai-search-cosmos-db-openai)
+6. [5. 배포 후 체크리스트](#5-배포-후-체크리스트)
+7. [문제 해결](#문제-해결) — [404 / publish](#function-라우트-404), [503 catalog](#문서-카탈로그-503), [CORS](#브라우저-cors-에러), [App Service quota](#app-service-플랜-쿼터-문제)
+8. [삭제](#삭제)
 
-| Created by this stack | Notes |
+
+### Terraform가 생성하는 리소스 (및 생성하지 않는 것)
+
+| 이 스택이 생성하는 리소스 | 비고 |
 |------------------------|--------|
-| Resource group | From `project_name` + suffix |
-| Storage account | Blob uploads container + Functions host storage (`AzureWebJobsStorage`) |
-| Service Bus | Namespace + processing queue (name matches `AZURE_PROCESSING_QUEUE_NAME`) |
-| Linux Function App | Node 20, extension ~4; **Application Insights** wired via app settings |
-| App Service plan | New plan **or** attach `existing_linux_service_plan_resource_id` |
-| Application Insights | Logs / metrics for the Function App |
+| 리소스 그룹 | `project_name` + suffix로 생성 |
+| 스토리지 계정 | Blob 업로드 컨테이너 + Functions 호스트 스토리지 (`AzureWebJobsStorage`) |
+| Service Bus | 네임스페이스 + 처리 큐 (`AZURE_PROCESSING_QUEUE_NAME`와 동일 이름) |
+| Linux Function App | Node 20, extension ~4; **Application Insights**는 앱 설정으로 연결 |
+| App Service 플랜 | 새 플랜 생성 **또는** `existing_linux_service_plan_resource_id`로 기존 플랜 연결 |
+| Application Insights | Function App의 로그/메트릭 |
 
-**Not** provisioned by default: **Azure AI Search**, **Cosmos DB**, **Azure OpenAI**. Connect existing services via Portal **Configuration** or `extra_app_settings` in `terraform.tfvars` (same variable names as [`local.settings.json.example`](../backend/functions-ingestion/local.settings.json.example)).
+**기본적으로 생성하지 않음:** **Azure AI Search**, **Cosmos DB**, **Azure OpenAI**. 기존 서비스를 연결하려면 Portal **구성(Configuration)** 또는 `terraform.tfvars`의 `extra_app_settings`를 사용하세요. (설정 이름은 [`local.settings.json.example`](../backend/functions-ingestion/local.settings.json.example)과 동일)
 
-Useful outputs after `terraform apply`:
+`terraform apply` 후 유용한 출력값:
 
-| Output | Purpose |
+| 출력값 | 용도 |
 |--------|---------|
-| `api_base_url` | Set `VITE_UPLOAD_API_BASE_URL` to this value (includes `/api`) |
-| `function_app_name` | Argument to `func azure functionapp publish` |
-| `storage_account_name` | Blob / CORS in Portal |
-| `servicebus_namespace` | Queue diagnostics |
-| `application_insights_connection_string` | Sensitive; optional local / CI use |
+| `api_base_url` | `VITE_UPLOAD_API_BASE_URL`에 사용 (끝에 `/api` 포함) |
+| `function_app_name` | `func azure functionapp publish` 명령에 사용 |
+| `storage_account_name` | Blob/CORS 설정에 사용 |
+| `servicebus_namespace` | 큐 진단에 사용 |
+| `application_insights_connection_string` | 민감 정보; 로컬/CI에서 선택적으로 사용 |
 
-> **If `terraform apply` fails with `Basic VMs: 0` or `Dynamic VMs: 0`:** your subscription cannot create **any** new App Service plan in that region. Terraform will keep failing until you either **(A)** set `existing_linux_service_plan_resource_id` in `terraform.tfvars` to an existing Linux plan in the **same subscription**, **(B)** switch to a subscription that has App Service quota (e.g. Pay-As-You-Go), or **(C)** request a quota increase in Azure Portal. Skipping this step is not optional—see [Troubleshooting](#troubleshooting) below.
+> **`terraform apply`가 `Basic VMs: 0` 또는 `Dynamic VMs: 0` 오류로 실패할 경우:** 해당 리전에 App Service 플랜을 새로 만들 수 없습니다. 아래 중 하나를 반드시 선택해야 합니다: **(A)** 같은 구독 내 기존 Linux 플랜의 리소스 ID를 `terraform.tfvars`의 `existing_linux_service_plan_resource_id`에 입력, **(B)** App Service 쿼터가 있는 구독(예: Pay-As-You-Go)으로 전환, **(C)** Azure Portal에서 쿼터 증가 요청. 이 단계를 건너뛸 수 없습니다—자세한 내용은 [문제 해결](#문제-해결) 참고.
 
-This stack provisions **Resource Group**, **Storage** (blob + Functions host), **Service Bus** (processing queue), **Linux Function App** (Node 20, extension ~4), and **Application Insights**. By default it also creates a **new** Linux App Service plan (`B1`, or `Y1` Consumption if you set `app_service_plan_sku`). That only works when Azure grants quota; otherwise use **`existing_linux_service_plan_resource_id`**. Cosmos DB, AI Search, and OpenAI keys are off by default—use `extra_app_settings` or the portal.
+이 스택은 **리소스 그룹**, **스토리지**(blob + Functions 호스트), **Service Bus**(처리 큐), **Linux Function App**(Node 20, extension ~4), **Application Insights**를 생성합니다. 기본적으로 **새 Linux App Service 플랜**(`B1`, 또는 `app_service_plan_sku`를 `Y1`로 설정 시 Consumption)을 만듭니다. 쿼터가 없으면 **`existing_linux_service_plan_resource_id`**를 사용하세요. Cosmos DB, AI Search, OpenAI 키는 기본적으로 꺼져 있습니다—`extra_app_settings`나 포털에서 직접 설정하세요.
 
-To use **Consumption** when quota allows: in `terraform.tfvars` set `app_service_plan_sku = "Y1"`.
+**Consumption 플랜 사용:** 쿼터가 허용되면 `terraform.tfvars`에 `app_service_plan_sku = "Y1"`로 설정하세요.
 
-## Prerequisites
 
-- [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.5
-- [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) logged in (`az login`)
-- Subscription selected: `az account set --subscription <id>`
-- **Node.js** (LTS, e.g. 20) for `npm run build` in `frontend` and `backend/functions-ingestion`
-- [Azure Functions Core Tools](https://learn.microsoft.com/azure/azure-functions/functions-run-local) v4.x (`func`) for `func azure functionapp publish`
+## 사전 준비
 
-## 1. Provision infrastructure
+- [Terraform](https://developer.hashicorp.com/terraform/install) 1.5 이상
+- [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) 로그인 (`az login`)
+- 구독 선택: `az account set --subscription <id>`
+- **Node.js** (LTS, 예: 20) — `frontend`와 `backend/functions-ingestion`에서 `npm run build` 필요
+- [Azure Functions Core Tools](https://learn.microsoft.com/azure/azure-functions/functions-run-local) v4.x (`func`) — `func azure functionapp publish`에 필요
 
-If your subscription often hits **quota 0** on plan creation, **before** `terraform apply` create or locate a **Linux** App Service plan that already exists (Portal → your plan → **JSON View** / properties → copy **Resource ID**), then put it in `infra/terraform.tfvars`:
+
+## 1. 인프라 프로비저닝
+
+구독에서 App Service 플랜 생성 쿼터가 자주 0이 된다면, `terraform apply` 전에 **기존 Linux App Service 플랜**을 만들어 두거나 찾아서 (Portal → 해당 플랜 → **JSON View** / properties → **Resource ID** 복사) `infra/terraform.tfvars`에 입력하세요:
 
 ```hcl
 existing_linux_service_plan_resource_id = "/subscriptions/.../resourceGroups/.../providers/Microsoft.Web/serverFarms/..."
@@ -65,16 +69,17 @@ terraform plan -out=tfplan
 terraform apply tfplan
 ```
 
-Note the outputs:
+출력값 확인:
 
 ```bash
 terraform output api_base_url
 terraform output function_app_name
 ```
 
-## 2. Publish Function App code
 
-From the Functions project (after `npm run build`):
+## 2. Function App 코드 배포
+
+Functions 프로젝트에서 (`npm run build` 후):
 
 ```bash
 cd ../backend/functions-ingestion
@@ -83,159 +88,203 @@ npm run build
 func azure functionapp publish "$(terraform -chdir=../../infra output -raw function_app_name)"
 ```
 
-If `func` is not installed, use [Azure Functions Core Tools](https://learn.microsoft.com/azure/azure-functions/functions-run-local).
+`func`가 설치되어 있지 않다면 [Azure Functions Core Tools](https://learn.microsoft.com/azure/azure-functions/functions-run-local)를 참고하세요.
 
-## 3. Point the frontend at Azure
 
-Set the API base URL to the deployed app (see `terraform output api_base_url`):
+## 3. 프론트엔드 Azure 연결
+
+API base URL을 배포된 앱으로 설정하세요 (`terraform output api_base_url` 참고):
 
 ```bash
 # frontend/.env
 VITE_UPLOAD_API_BASE_URL=https://<function-app>.azurewebsites.net/api
-VITE_UPLOAD_API_KEY=<optional: host key for authLevel=function routes>
+VITE_UPLOAD_API_KEY=<선택: function 라우트용 host key>
 ```
 
-Rebuild the SPA and host it (Static Web Apps, Storage static website, etc.). Add your site origin to:
+SPA를 다시 빌드하고 (Static Web Apps, Storage static website 등) 호스팅하세요. 아래 두 곳에 사이트 origin을 추가해야 합니다:
 
-- **Function App** CORS (portal or `host.json` for allowed origins), and  
-- **Storage account** blob CORS (`blob_cors_origins` in Terraform, or portal) for browser PUT uploads.
+- **Function App** CORS (포털 또는 `host.json`의 allowed origins)
+- **Storage account** blob CORS (`blob_cors_origins` in Terraform, 또는 포털) — 브라우저에서 PUT 업로드 허용
 
-## 4. Optional backends: Azure AI Search, Cosmos DB, OpenAI
 
-Terraform leaves **Cosmos DB** and **Azure AI Search** off by default (`COSMOS_DB_ENABLED` / `SEARCH_ENABLED` are `false` and endpoints are empty). Turn on at least **Search** or **Cosmos** if you want the [document catalog](../backend/functions-ingestion/src/functions/listDocumentCatalog.ts) API to return **200** instead of **503** (see [Troubleshooting: document catalog 503](#document-catalog-returns-503)).
+## 4. 선택적 백엔드: Azure AI Search, Cosmos DB, OpenAI
 
-Setting names match [`backend/functions-ingestion/local.settings.json.example`](../backend/functions-ingestion/local.settings.json.example).
+Terraform은 기본적으로 **Cosmos DB**와 **Azure AI Search**를 꺼둡니다 (`COSMOS_DB_ENABLED` / `SEARCH_ENABLED`가 `false`이고 endpoint가 비어 있음). [문서 카탈로그](../backend/functions-ingestion/src/functions/listDocumentCatalog.ts) API가 **503**이 아닌 **200**을 반환하려면 최소한 **Search** 또는 **Cosmos**를 켜야 합니다 ([문제 해결: 문서 카탈로그 503](#문서-카탈로그-503) 참고).
 
-### 4.1 Azure AI Search (use an existing service)
+SPA의 상태 카드들은 `GET /api/flags/deployment` API로 동작합니다:
 
-You **do not** need to create a second Search service if you already have one (for example **Search service** `rag-search-core` in any resource group or region). Point the Function App at that service with application settings.
+- **Cosmos · document state**: Cosmos 메타데이터 쓰기 활성화 여부
+- **AI Search · indexing**: Search 인덱싱/쿼리 활성화 여부
+- **Chat answers = Search snippets only**: OpenAI 키가 없을 때의 정상적인 fallback 모드 (런타임 에러 아님)
 
-**Cross-region:** The Function App and Search can live in different regions (e.g. Function in `eastus`, Search in `Australia East`). The worker calls Search over HTTPS; only latency may differ.
+설정 이름은 [`backend/functions-ingestion/local.settings.json.example`](../backend/functions-ingestion/local.settings.json.example)과 동일합니다.
 
-**Index name:** Default in code and Terraform is **`rag-chunks`**. If your Search service uses another index name, set `SEARCH_INDEX_NAME` on the Function App to match. When Search is enabled, the Functions code can **create or update** the index schema as needed on first use— you usually do **not** need to pre-create the index in the portal unless you intentionally manage it yourself.
 
-#### Option A — Azure Portal
+### 4.1 Azure AI Search (기존 서비스 사용)
 
-1. Open your **Azure AI Search** resource (e.g. `rag-search-core`).
-2. **Overview** → copy **Url** (e.g. `https://<service-name>.search.windows.net`). This is `SEARCH_ENDPOINT` (no trailing slash required).
-3. **Settings** → **Keys** → copy a **Admin key** (primary or secondary). This is `SEARCH_API_KEY`.
-4. Open your **Function App** (the one Terraform created / you publish to).
-5. **Settings** → **Configuration** → **Application settings** → **+ New application setting** (or edit existing):
-   - `SEARCH_ENABLED` = `true`
-   - `SEARCH_ENDPOINT` = the URL from step 2
-   - `SEARCH_API_KEY` = the admin key from step 3
-   - `SEARCH_INDEX_NAME` = only if not using `rag-chunks`
-6. **Save**. Wait for the app to restart.
+이미 Search 서비스가 있다면(예: `rag-search-core`), 새로 만들 필요 없이 해당 서비스 정보를 Function App에 환경 변수로 연결하면 됩니다.
 
-**Verify:** `GET https://<function-app>.azurewebsites.net/api/documents/catalog?tenantId=<tenant>` should return **200** (possibly an empty `documents` array until you upload and index content).
+**리전이 달라도 무방:** Function App과 Search가 서로 다른 리전에 있어도 HTTPS로 통신하므로 문제 없습니다(지연만 다를 수 있음).
 
-#### Option B — Terraform `extra_app_settings`
+**인덱스 이름:** 기본값은 **`rag-chunks`**입니다. Search 서비스에서 다른 인덱스명을 쓴다면 Function App의 `SEARCH_INDEX_NAME`을 맞춰주세요. Search가 활성화되면 Functions 코드가 인덱스 스키마를 자동으로 생성/업데이트합니다(직접 관리할 경우만 포털에서 미리 생성).
 
-Do **not** commit secrets. Keep `terraform.tfvars` gitignored and merge Search keys via `extra_app_settings` (see [`infra/terraform.tfvars.example`](../infra/terraform.tfvars.example)):
+#### 방법 A — Azure Portal
+
+1. **Azure AI Search** 리소스(예: `rag-search-core`)로 이동
+2. **개요(Overview)** → **Url** 복사 (예: `https://<service-name>.search.windows.net`) → `SEARCH_ENDPOINT`
+3. **설정(Settings)** → **키(Keys)** → **Admin key** 복사 → `SEARCH_API_KEY`
+4. **Function App** → **설정(Settings)** → **구성(Configuration)** → **애플리케이션 설정(Application settings)** → **+ 새 애플리케이션 설정** (또는 기존 값 수정)
+    - `SEARCH_ENABLED` = `true`
+    - `SEARCH_ENDPOINT` = 2번에서 복사한 URL
+    - `SEARCH_API_KEY` = 3번에서 복사한 키
+    - `SEARCH_INDEX_NAME` = `rag-chunks`가 아닐 경우만 입력
+5. **저장 후 앱 재시작**
+
+**확인:** `GET https://<function-app>.azurewebsites.net/api/documents/catalog?tenantId=<tenant>` 호출 시 **200** 반환(업로드/인덱싱 전이면 빈 배열일 수 있음)
+
+#### 방법 B — Terraform `extra_app_settings`
+
+비밀키는 커밋하지 마세요. `terraform.tfvars`는 gitignore 처리하고, Search 키는 `extra_app_settings`로 병합(예시는 [`infra/terraform.tfvars.example`](../infra/terraform.tfvars.example) 참고):
 
 ```hcl
 extra_app_settings = {
-  SEARCH_ENABLED   = "true"
-  SEARCH_ENDPOINT  = "https://<your-search-service>.search.windows.net"
-  SEARCH_API_KEY   = "<admin-key-from-portal>"
-  # SEARCH_INDEX_NAME = "custom-index"  # omit if default rag-chunks
+   SEARCH_ENABLED   = "true"
+   SEARCH_ENDPOINT  = "https://<your-search-service>.search.windows.net"
+   SEARCH_API_KEY   = "<admin-key-from-portal>"
+   # SEARCH_INDEX_NAME = "custom-index"  # 기본값(rag-chunks)이면 생략
 }
 ```
 
-Then:
+적용:
 
 ```bash
 cd infra
 terraform apply
 ```
 
-### 4.2 Cosmos DB (optional)
 
-To use Cosmos for document metadata: set `COSMOS_DB_ENABLED` = `true`, plus `COSMOS_ENDPOINT`, `COSMOS_KEY`, and optionally `COSMOS_DATABASE_ID` / `COSMOS_DOCUMENTS_CONTAINER_ID` (defaults exist in `local.settings.json.example`). Portal or `extra_app_settings` same pattern as Search.
+### 4.2 Cosmos DB (선택)
 
-### 4.3 OpenAI / embeddings (optional)
+문서 메타데이터 저장에 Cosmos를 사용하려면: `COSMOS_DB_ENABLED` = `true`로 설정하고, `COSMOS_ENDPOINT`, `COSMOS_KEY`, 필요시 `COSMOS_DATABASE_ID` / `COSMOS_DOCUMENTS_CONTAINER_ID`도 지정하세요(기본값은 `local.settings.json.example` 참고). Portal이나 `extra_app_settings` 방식은 Search와 동일합니다.
 
-Chat, embeddings, and some ingestion paths need additional keys (`AZURE_OPENAI_*`, `OPENAI_API_KEY`, `EMBEDDING_ENABLED`, etc.). See `local.settings.json.example` and enable only what you use.
+Cosmos를 **나중에** 활성화하면, 기존에 Search에만 인덱싱된 문서는 카탈로그에서 `Cosmos = —`로 표시됩니다. 이때는 아래 스크립트로 메타데이터를 백필하세요:
 
-## 5. Post-deploy checklist
+```bash
+cd backend/functions-ingestion
+COSMOS_DB_ENABLED=true \
+COSMOS_ENDPOINT="https://<account>.documents.azure.com:443/" \
+COSMOS_KEY="<key>" \
+SEARCH_ENABLED=true \
+SEARCH_ENDPOINT="https://<service>.search.windows.net" \
+SEARCH_API_KEY="<admin-key>" \
+npm run cosmos:backfill
+```
 
-Use this after `terraform apply` and `func azure functionapp publish`.
+백필 스크립트용 환경 변수(선택):
 
-- [ ] **Functions build included in zip:** run `npm run build` in `backend/functions-ingestion` before every publish. This repo un-ignores `backend/functions-ingestion/dist/` in `.gitignore` so Core Tools includes compiled JS (see [404 troubleshooting](#function-routes-return-404-after-publish)).
-- [ ] **API URL:** `terraform output api_base_url` matches `frontend/.env` → `VITE_UPLOAD_API_BASE_URL` (must end with `/api`).
-- [ ] **Catalog not 503:** at least one of Search or Cosmos is on with valid endpoints/keys ([§4.1](#41-azure-ai-search-use-an-existing-service) / [§4.2](#42-cosmos-db-optional)).
-- [ ] **Blob uploads from browser:** Storage account **CORS** allows your SPA origin and `PUT` (Terraform `blob_cors_origins`; re-apply if you add a Static Web Apps URL).
-- [ ] **Function CORS:** same origins as above (Function App `site_config.cors` in Terraform mirrors `blob_cors_origins`).
-- [ ] **Optional keys:** for routes with `authLevel: function`, set `VITE_UPLOAD_API_KEY` to the Function App **App keys → `_default`** host key (`frontend/.env.example` comments).
-- [ ] **Production hardening:** set `ALLOWED_TENANT_IDS` to a comma-separated allowlist; do not rely on UI-supplied tenant alone ([security-and-pitch.md](./security-and-pitch.md)).
-- [ ] **Observability:** Application Insights is configured on the Function App by default. Portal → Function App → **Application Insights** or **Log stream** to debug queue/Blob/HTTP failures.
+- `BACKFILL_TENANT_ID` — 특정 tenant만 백필
+- `BACKFILL_MAX_CHUNKS` — 최대 검색 스캔 수(기본 5000)
+- `BACKFILL_PAGE_SIZE` — 페이지 크기(최대 1000)
+- `BACKFILL_DRY_RUN=true` — Cosmos에 쓰지 않고 요약만 출력
 
-### HTTP routes (quick reference)
 
-Paths are relative to `https://<function-app>.azurewebsites.net/api`.
+### 4.3 OpenAI / 임베딩 (선택)
 
-| Route | Typical use |
+Chat, 임베딩, 일부 인제스트 경로는 추가 키(`AZURE_OPENAI_*`, `OPENAI_API_KEY`, `EMBEDDING_ENABLED` 등)가 필요합니다. `local.settings.json.example`을 참고해 필요한 것만 활성화하세요.
+
+이 키들이 없어도 `POST /api/chat`은 **search-only fallback mode**로 동작합니다. 검색된 chunk와 citation만으로 답변을 생성하므로, LLM 기반 생성 활성화 전 인제스트 품질 검증에 유용합니다.
+
+
+## 5. 배포 후 체크리스트
+
+`terraform apply`와 `func azure functionapp publish` 이후 아래 항목을 확인하세요.
+
+- [ ] **Functions 빌드 포함:** 매번 배포 전 `backend/functions-ingestion`에서 `npm run build` 실행. 이 저장소는 `.gitignore`에서 `backend/functions-ingestion/dist/`를 제외시켜 Core Tools가 빌드된 JS를 포함하도록 함([404 문제 해결](#function-라우트-404) 참고).
+- [ ] **API URL:** `terraform output api_base_url`이 `frontend/.env`의 `VITE_UPLOAD_API_BASE_URL`과 일치(끝에 `/api` 포함).
+- [ ] **카탈로그 503 아님:** Search 또는 Cosmos 중 하나 이상이 활성화되어 있고 endpoint/key가 유효([§4.1](#41-azure-ai-search-기존-서비스-사용) / [§4.2](#42-cosmos-db-선택)).
+- [ ] **기존 Search 문서 백필:** Cosmos를 나중에 켰다면, 예전 카탈로그 행도 Cosmos 메타데이터가 보이게 하려면 `npm run cosmos:backfill` 실행.
+- [ ] **브라우저 Blob 업로드:** Storage 계정 **CORS**에 SPA origin과 `PUT` 허용(Terraform `blob_cors_origins`; Static Web Apps URL 추가 시 재적용).
+- [ ] **Function CORS:** 위와 동일한 origin(Function App `site_config.cors`는 `blob_cors_origins`와 동일하게 설정).
+- [ ] **선택적 키:** `authLevel: function` 라우트용으로 Function App **App keys → `_default`** host key를 `VITE_UPLOAD_API_KEY`에 입력(`frontend/.env.example` 주석 참고).
+- [ ] **운영 보안 강화:** `ALLOWED_TENANT_IDS`에 허용할 tenant ID를 콤마로 구분해 입력. UI에서 입력된 tenant만 신뢰하지 마세요([security-and-pitch.md](./security-and-pitch.md)).
+- [ ] **관측성:** Application Insights가 Function App에 기본 연결됨. Portal → Function App → **Application Insights** 또는 **Log stream**에서 큐/Blob/HTTP 오류 디버깅.
+
+
+### HTTP 라우트 (빠른 참고)
+
+경로는 모두 `https://<function-app>.azurewebsites.net/api` 기준입니다.
+
+| 라우트 | 용도 |
 |--------|-------------|
-| `GET flags/deployment` | Runtime feature flags (no secrets) |
-| `GET documents/catalog?tenantId=` | Merged Cosmos + Search document list |
-| `DELETE documents/{documentId}/purge?tenantId=` | Remove Search chunks + Cosmos row (not Blob) |
-| `POST uploads/create` | SAS + metadata for browser PUT upload |
-| `POST chat` | RAG chat |
+| `GET flags/deployment` | 런타임 기능 플래그(비밀 없음) |
+| `GET documents/catalog?tenantId=` | Cosmos + Search 병합 문서 목록 |
+| `DELETE documents/{documentId}/purge?tenantId=` | Search chunk + Cosmos 행 삭제(Blob은 아님) |
+| `POST uploads/create` | 브라우저 PUT 업로드용 SAS + 메타데이터 |
+| `POST chat` | RAG 챗 |
 
-Several handlers use `authLevel: anonymous` for local/demo convenience; lock down with APIM, VNet, or auth in real deployments.
+여러 핸들러가 로컬/데모 편의를 위해 `authLevel: anonymous`를 사용합니다. 실제 운영 환경에서는 APIM, VNet, 인증 등으로 잠그세요.
 
-## Troubleshooting
 
-### Function routes return 404 after publish
+## 문제 해결
 
-Symptoms: `GET /api/documents/catalog`, `GET /api/flags/deployment`, or other HTTP routes return **404** on Azure though they work locally.
+### Function 라우트 404
 
-`func azure functionapp publish` **honours `.gitignore`**. If `backend/functions-ingestion/dist/` was ignored, the zip had **no compiled `dist/`**, so no HTTP routes were registered on Azure → 404. This repo adds `!backend/functions-ingestion/dist/` so the Functions build output is included. After pulling that change: `npm run build` in `backend/functions-ingestion`, then **`func azure functionapp publish …` again**.
+증상: `GET /api/documents/catalog`, `GET /api/flags/deployment` 등 HTTP 라우트가 Azure에서는 **404**를 반환(로컬에서는 정상 동작).
 
-### Document catalog returns 503
+`func azure functionapp publish`는 **.gitignore**를 따릅니다. 만약 `backend/functions-ingestion/dist/`가 무시되고 있었다면, zip에 빌드된 JS가 포함되지 않아 Azure에 라우트가 등록되지 않아 404가 발생합니다. 이 저장소는 `!backend/functions-ingestion/dist/`로 예외 처리되어 있습니다. 변경사항을 pull한 뒤 `npm run build` 실행 후 **`func azure functionapp publish …` 재실행**하세요.
 
-Symptoms: `GET /api/documents/catalog?tenantId=…` returns **503** with a JSON body such as both Cosmos and Search disabled.
+### 문서 카탈로그 503
 
-The Functions app returns **503** when **both** Cosmos DB and Azure AI Search are turned off (`COSMOS_DB_ENABLED` and `SEARCH_ENABLED` are not `true`). The default Terraform `app_settings` keep them off so you can deploy storage + queue + Functions first.
+증상: `GET /api/documents/catalog?tenantId=…`가 **503**과 함께 JSON 본문을 반환(Cosmos와 Search 모두 비활성화).
 
-**Fix:** enable at least one backend the catalog can read from:
+Functions 앱은 **Cosmos DB**와 **Azure AI Search**가 모두 꺼져 있으면 **503**을 반환합니다(`COSMOS_DB_ENABLED`, `SEARCH_ENABLED`가 모두 `true`가 아님). 기본 Terraform `app_settings`는 이 둘을 꺼둡니다.
 
-- **Search only (common for RAG):** in `terraform.tfvars` merge into `extra_app_settings` (see `terraform.tfvars.example`): `SEARCH_ENABLED = "true"`, `SEARCH_ENDPOINT`, `SEARCH_API_KEY`, and optionally `SEARCH_INDEX_NAME` if not `rag-chunks`. Then `terraform apply` and wait for the app to restart; or set the same keys in Portal → Function App → **Configuration**.
-- **Cosmos:** set `COSMOS_DB_ENABLED = "true"` plus `COSMOS_ENDPOINT`, `COSMOS_KEY`, and container/database IDs if you use metadata there.
+**해결:** 카탈로그가 읽을 수 있는 백엔드(Search 또는 Cosmos) 중 하나 이상을 활성화하세요:
 
-Until one of those is enabled, the catalog endpoint responds by design with 503 and a JSON body explaining that both stores are disabled.
+- **Search만 사용:** `terraform.tfvars`의 `extra_app_settings`에 `SEARCH_ENABLED = "true"`, `SEARCH_ENDPOINT`, `SEARCH_API_KEY`(필요시 `SEARCH_INDEX_NAME`)를 추가 후 `terraform apply` 및 앱 재시작. 또는 포털에서 동일하게 설정.
+- **Cosmos 사용:** `COSMOS_DB_ENABLED = "true"`와 `COSMOS_ENDPOINT`, `COSMOS_KEY`, (필요시 컨테이너/DB ID) 설정.
 
-### Browser shows Failed to fetch (CORS)
+둘 중 하나라도 활성화되기 전까지는 503과 함께 비활성화 안내 JSON이 반환됩니다.
 
-Usually **CORS**: the page runs on `http://localhost:5173` but requests go to `https://<functionapp>.azurewebsites.net`. After `terraform apply`, the Function App `site_config.cors` uses the same origins as `blob_cors_origins` (defaults include localhost). Re-run `terraform apply` if you changed origins.
+### 챗이 검색 스니펫만 답변할 때
 
-Also check **DevTools → Network**: red request + CORS error in console confirms it. As a fallback, Portal → your Function App → **CORS** → add `http://localhost:5173` (and your real SPA URL when hosted).
+증상: 챗 패널이 검색 기반 요약만 반환하고, 상태 카드에 **Chat answers → Search snippets only**가 표시됨.
 
-Verify `frontend/.env` has **`VITE_UPLOAD_API_BASE_URL=https://<app>.azurewebsites.net/api`** (including `/api`).
+이는 `OPENAI_API_KEY`나 `AZURE_OPENAI_API_KEY`가 설정되지 않았을 때의 정상적인 fallback입니다. 검색은 정상 동작하며 citation도 반환되지만, LLM을 호출해 최종 답변을 생성하지 않습니다.
 
-### Service Bus namespace name is invalid
+**해결:** Function App에 OpenAI 또는 Azure OpenAI 키를 설정 후 앱을 재시작/설정 재적용하세요. 그 전까지는 ingestion 품질/tenant 필터 검증에 fallback 모드가 유용합니다.
 
-Azure reserves namespace names that end with `-sb` or `-mgmt`. This repo uses `"{project}-sb-{random}"` so the name does not end with `-sb`.
+### 브라우저 CORS 에러 (Failed to fetch)
 
-### App Service plan quota is zero
+대부분 **CORS** 문제: 페이지는 `http://localhost:5173`에서 실행, 요청은 `https://<functionapp>.azurewebsites.net`로 전송. `terraform apply` 후 Function App의 `site_config.cors`는 `blob_cors_origins`와 동일한 origin을 사용합니다(localhost 포함). origin을 변경했다면 `terraform apply`를 다시 실행하세요.
 
-Applies when Terraform or Azure reports **Dynamic VMs: 0** and/or **Basic VMs: 0** (cannot create a new Linux App Service plan).
+**DevTools → Network**에서 빨간 요청 + CORS 에러가 보이면 확실합니다. 포털 → Function App → **CORS**에서 `http://localhost:5173`(및 실제 SPA URL) 추가도 가능.
 
-Some subscriptions (e.g. certain **Azure for Students** or tightly capped tenants) report **0** for both **Dynamic VMs** (Consumption) and **Basic VMs** (B1). Terraform **cannot create a new App Service plan** in that case.
+`frontend/.env`의 **`VITE_UPLOAD_API_BASE_URL=https://<app>.azurewebsites.net/api`**(끝에 `/api` 포함)도 확인하세요.
 
-Pick one path:
+### Service Bus 네임스페이스 이름 오류
 
-1. **Portal** → Subscriptions → **Usage + quotas** → request an increase for **App Service** / **Basic small vCPU** (or use a **Pay-As-You-Go** subscription), or  
-2. Try another `location` in `terraform.tfvars` (e.g. `westus2`), or  
-3. **Reuse an existing Linux App Service plan** in the **same subscription** that already has capacity: set in `terraform.tfvars`:
+Azure는 `-sb` 또는 `-mgmt`로 끝나는 네임스페이스 이름을 예약합니다. 이 저장소는 `"{project}-sb-{random}"` 패턴을 사용해 충돌을 피합니다.
+
+### App Service 플랜 쿼터 문제
+
+Terraform 또는 Azure에서 **Dynamic VMs: 0** 또는 **Basic VMs: 0**(새 Linux App Service 플랜 생성 불가) 오류가 발생할 때.
+
+일부 구독(예: Azure for Students, 제한이 심한 테넌트)은 두 쿼터 모두 0일 수 있습니다. 이 경우 Terraform은 새 App Service 플랜을 만들 수 없습니다.
+
+해결 방법:
+
+1. **포털** → Subscriptions → **Usage + quotas** → **App Service** / **Basic small vCPU** 쿼터 증가 요청(또는 Pay-As-You-Go 구독 사용)
+2. `terraform.tfvars`의 `location`을 다른 리전(예: `westus2`)으로 변경
+3. **같은 구독 내 기존 Linux App Service 플랜 재사용:**
    ```hcl
    existing_linux_service_plan_resource_id = "/subscriptions/<SUB>/resourceGroups/<RG>/providers/Microsoft.Web/serverFarms/<PLAN_NAME>"
    ```
-   Then `terraform apply` skips creating `azurerm_service_plan` and attaches the Function App to that plan (the Function App is created in the **plan’s region**; Storage/Service Bus stay in `location`).
+   이 경우 `terraform apply`는 `azurerm_service_plan` 생성을 건너뛰고 해당 플랜에 Function App을 연결합니다(플랜 리전에 Function App 생성, Storage/Service Bus는 기존 location 유지).
 
-**Terraform prompt:** type the letters `yes` only (a Korean IME can produce `ㅛyes`, which is **not** accepted).
+**Terraform 프롬프트:** 반드시 영문 `yes`만 입력하세요(한글 IME로 `ㅛyes` 입력 시 인식 안 됨).
 
-## Destroy
+## 삭제
 
 ```bash
 cd infra

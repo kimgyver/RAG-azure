@@ -91,6 +91,74 @@ function buildContextFromHits(hits: ChunkSearchHit[]): string {
     .join("\n\n");
 }
 
+function extractIdentitySubject(question: string): string | null {
+  const normalized = question.trim().replace(/\?+$/, "");
+  const englishMatch = normalized.match(/^who is\s+(.+)$/i);
+  if (englishMatch?.[1]) {
+    return englishMatch[1].trim().toLowerCase();
+  }
+
+  const koreanMatch = normalized.match(/^(.+)\s*(?:이|가)?\s*누구(?:야|예요|인가요)?$/);
+  if (koreanMatch?.[1]) {
+    return koreanMatch[1].trim().toLowerCase();
+  }
+
+  return null;
+}
+
+function chooseSearchOnlyLeadHit(
+  question: string,
+  hits: ChunkSearchHit[]
+): ChunkSearchHit {
+  const subject = extractIdentitySubject(question);
+  if (!subject) {
+    return hits[0];
+  }
+
+  const exactContentMatches = hits
+    .filter(hit => compactWhitespace(hit.content).toLowerCase().includes(subject))
+    .sort((left, right) => left.chunkIndex - right.chunkIndex);
+  if (exactContentMatches.length > 0) {
+    return exactContentMatches[0];
+  }
+
+  const fileNameMatches = hits
+    .filter(hit => hit.fileName.toLowerCase().includes(subject))
+    .sort((left, right) => left.chunkIndex - right.chunkIndex);
+  if (fileNameMatches.length > 0) {
+    return fileNameMatches[0];
+  }
+
+  return hits[0];
+}
+
+function buildSearchOnlyAnswer(question: string, hits: ChunkSearchHit[]): string {
+  if (hits.length === 0) {
+    return "No indexed documents matched this question for the current tenant. Try rephrasing the question or check document indexing status.";
+  }
+
+  const lead = chooseSearchOnlyLeadHit(question, hits);
+  const leadSnippet = createSnippet(lead.content, 280);
+  const supportingLines = hits
+    .filter(hit => hit.id !== lead.id)
+    .slice(0, 2)
+    .map(
+      hit =>
+        `- ${hit.fileName} chunk ${hit.chunkIndex + 1}: ${createSnippet(hit.content, 160)}`
+    );
+
+  const sections = [
+    `Based on the indexed documents for this tenant, the strongest match is: ${leadSnippet}`
+  ];
+
+  if (supportingLines.length > 0) {
+    sections.push("Supporting matches:");
+    sections.push(...supportingLines);
+  }
+
+  return sections.join("\n");
+}
+
 async function generateAnswer(
   question: string,
   hits: ChunkSearchHit[]
@@ -98,14 +166,7 @@ async function generateAnswer(
   const client = getOpenAiClient();
 
   if (!client) {
-    if (hits.length === 0) {
-      return "현재 tenant 범위에서 질문과 관련된 인덱싱 문서를 찾지 못했습니다. 질문 표현을 바꾸거나 문서 인덱싱 상태를 먼저 확인해 주세요.";
-    }
-    const lines = hits.map(
-      (hit, i) =>
-        `${i + 1}. ${hit.fileName} chunk ${hit.chunkIndex + 1}: ${createSnippet(hit.content, 180)}`
-    );
-    return ["OPENAI_API_KEY 미설정. 검색 결과 요약:", ...lines].join("\n");
+    return buildSearchOnlyAnswer(question, hits);
   }
 
   const model = process.env.OPENAI_MODEL?.trim() ?? "gpt-4o-mini";
@@ -129,7 +190,7 @@ async function generateAnswer(
     });
     return (
       completion.choices[0]?.message?.content?.trim() ??
-      "답변을 생성하지 못했습니다."
+      "Could not generate an answer."
     );
   }
 
@@ -153,7 +214,7 @@ async function generateAnswer(
 
   return (
     completion.choices[0]?.message?.content?.trim() ??
-    "답변을 생성하지 못했습니다."
+    "Could not generate an answer."
   );
 }
 

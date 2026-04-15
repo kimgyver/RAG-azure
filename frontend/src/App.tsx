@@ -211,6 +211,22 @@ function App() {
   );
 
   const effectiveTenantId = tenantId.trim() || defaultTenantId;
+  const searchOnlyMode =
+    runtimeConfigStatus === "ok" && runtimeConfig
+      ? !runtimeConfig.openAiChatConfigured
+      : false;
+  const cosmosStateSummary =
+    runtimeConfigStatus === "ok" && runtimeConfig
+      ? runtimeConfig.cosmosDbEnabled
+        ? "Metadata writes are active for upload status and catalog rows."
+        : "Metadata writes are off. Search can still work without Cosmos."
+      : "";
+  const chatModeSummary =
+    runtimeConfigStatus === "ok" && runtimeConfig
+      ? runtimeConfig.openAiChatConfigured
+        ? "Generative mode is active. Retrieved search chunks are passed to the model for answer synthesis."
+        : "Search-only mode is active. Answers are assembled from retrieved search chunks until OpenAI credentials are configured."
+      : "";
 
   const loadCatalog = useCallback(async () => {
     setCatalogStatus("loading");
@@ -626,6 +642,9 @@ function App() {
                 <span>Cosmos · document state</span>
                 <strong>{runtimeConfig.cosmosDbEnabled ? "On" : "Off"}</strong>
                 <p className="hero-stat-sub">
+                  {cosmosStateSummary}
+                </p>
+                <p className="hero-stat-sub hero-stat-sub-secondary">
                   {runtimeConfig.tenantAllowlistActive
                     ? "Allowlisted tenants only (ALLOWED_TENANT_IDS)"
                     : "No tenant restriction · local default"}
@@ -649,9 +668,12 @@ function App() {
                     : "Search snippets only"}
                 </strong>
                 <p className="hero-stat-sub">
+                  {chatModeSummary}
+                </p>
+                <p className="hero-stat-sub hero-stat-sub-secondary">
                   {runtimeConfig.openAiChatConfigured
                     ? "OPENAI_API_KEY set — GPT-style answers"
-                    : "No OPENAI_API_KEY — index snippets only"}
+                    : "OPENAI_API_KEY not set yet — fallback mode is expected"}
                 </p>
               </div>
             </>
@@ -763,6 +785,19 @@ function App() {
             <span className="panel-tag">Tenant-scoped search</span>
           </div>
 
+          {runtimeConfigStatus === "ok" && runtimeConfig ? (
+            <div className={`mode-callout ${searchOnlyMode ? "mode-callout-warning" : "mode-callout-ok"}`}>
+              <strong>
+                {searchOnlyMode ? "Search-only fallback mode" : "Generative answer mode"}
+              </strong>
+              <p>
+                {searchOnlyMode
+                  ? "This is not an error. The assistant is answering from Azure AI Search results because no OpenAI credential is configured yet."
+                  : "Search results are retrieved first and then condensed into a model-generated answer."}
+              </p>
+            </div>
+          ) : null}
+
           <div className="chat-stream">
             {chatMessages.map(message => (
               <article
@@ -800,8 +835,8 @@ function App() {
             />
             <div className="composer-actions">
               <div className="composer-hint">
-                Answers use retrieved chunks from Search first; generative mode
-                matches the “Chat answers” flag above.
+                Search always runs first. The runtime flag above decides whether
+                the final answer is search-only or model-generated.
               </div>
               <button type="submit" disabled={chatPending || !chatInput.trim()}>
                 {chatPending ? "Working…" : "Send question"}
@@ -832,6 +867,13 @@ function App() {
               ? "Loading catalog…"
               : catalogMessage || "Merged rows for the current tenant."}
           </p>
+          {runtimeConfigStatus === "ok" && runtimeConfig ? (
+            <p className="catalog-mode-note">
+              {runtimeConfig.cosmosDbEnabled
+                ? "Cosmos metadata is active. Upload status and catalog rows are persisted in Cosmos and merged with Search chunks below."
+                : "Cosmos metadata is off. Catalog rows below come from Search only until Cosmos is enabled."}
+            </p>
+          ) : null}
           <div className="catalog-table-wrap">
             <table className="catalog-table">
               <thead>

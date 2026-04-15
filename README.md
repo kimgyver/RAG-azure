@@ -57,6 +57,13 @@ npm run start
 3. 포털 또는 `extra_app_settings`로 **AI Search**(또는 Cosmos) 연결 — 안 하면 카탈로그가 **503** ([deployment-azure.md §4](./docs/deployment-azure.md#4-optional-backends-azure-ai-search-cosmos-db-openai)).  
 4. `frontend/.env`에 `VITE_UPLOAD_API_BASE_URL=https://<앱>.azurewebsites.net/api` 등 설정 후 빌드·호스팅.
 
+배포 후 화면 해석:
+
+- **AI Search · indexing = On** 이면 검색/카탈로그/챗 검색 경로가 활성화된 상태다.
+- **Cosmos · document state = On** 이면 업로드 상태 메타데이터를 Cosmos에도 저장한다. 기존에 Search에만 들어 있던 문서는 자동으로 소급 생성되지 않으므로 필요하면 `npm run cosmos:backfill` 로 메타데이터를 채운다.
+- **Chat answers = Search snippets only** 는 오류가 아니라 `OPENAI_API_KEY` 또는 `AZURE_OPENAI_API_KEY` 가 비어 있을 때의 정상 fallback 모드다. 이 경우 챗은 생성형 답변 대신 Search 기반 요약을 반환한다.
+- 프론트 채팅 패널과 카탈로그 상단에도 현재 모드를 설명하는 안내 문구가 보이도록 해, 설정 상태를 화면에서 바로 읽을 수 있게 했다.
+
 전체 절차·트러블슈팅은 [docs/deployment-azure.md](./docs/deployment-azure.md)를 본다.
 
 ## 검토 메모 (README 분리 시)

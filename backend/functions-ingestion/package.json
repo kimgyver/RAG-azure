@@ -7,6 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist",
+    "cosmos:backfill": "node scripts/backfill-cosmos-from-search.mjs",
     "search:clear": "node scripts/clear-search-index.mjs",
     "search:debug:rebuild": "node scripts/rebuild-debug-search-index.mjs",
     "storage:setup": "node scripts/init-local-storage.mjs",
