@@ -30,6 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TF_IN_AUTOMATION: "true"
+      TF_VAR_app_service_plan_sku: "Y1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,6 +51,29 @@ jobs:
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Resolve Linux App Service plan for quota-limited subscriptions
+        shell: bash
+        env:
+          PLAN_ID_FROM_VAR: ${{ vars.EXISTING_LINUX_SERVICE_PLAN_RESOURCE_ID }}
+        run: |
+          set -euo pipefail
+
+          PLAN_ID="${PLAN_ID_FROM_VAR:-}"
+          if [ -n "$PLAN_ID" ]; then
+            echo "Using EXISTING_LINUX_SERVICE_PLAN_RESOURCE_ID from repository variable"
+            echo "TF_VAR_existing_linux_service_plan_resource_id=$PLAN_ID" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          PLAN_ID="$(az appservice plan list --query "[?reserved==\`true\`].id | [0]" -o tsv)"
+          if [ -n "$PLAN_ID" ]; then
+            echo "Using first discovered Linux App Service plan in subscription"
+            echo "TF_VAR_existing_linux_service_plan_resource_id=$PLAN_ID" >> "$GITHUB_ENV"
+          else
+            echo "No existing Linux App Service plan discovered. Terraform will attempt new Y1 plan creation."
+            echo "If quota error persists, set repository variable EXISTING_LINUX_SERVICE_PLAN_RESOURCE_ID."
+          fi
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3

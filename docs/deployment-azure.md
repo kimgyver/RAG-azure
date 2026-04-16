@@ -328,6 +328,7 @@ Terraform 또는 Azure에서 **Dynamic VMs: 0** 또는 **Basic VMs: 0**(새 Linu
    existing_linux_service_plan_resource_id = "/subscriptions/<SUB>/resourceGroups/<RG>/providers/Microsoft.Web/serverFarms/<PLAN_NAME>"
    ```
    이 경우 `terraform apply`는 `azurerm_service_plan` 생성을 건너뛰고 해당 플랜에 Function App을 연결합니다(플랜 리전에 Function App 생성, Storage/Service Bus는 기존 location 유지).
+   GitHub Actions에서는 저장소 변수 `EXISTING_LINUX_SERVICE_PLAN_RESOURCE_ID`를 설정하면 동일하게 재사용합니다.
 3. 그래도 필요하면 **포털** → Subscriptions → **Usage + quotas**에서 App Service 쿼터 증가 요청(또는 다른 구독/리전 사용)
 
 **Terraform 프롬프트:** 반드시 영문 `yes`만 입력하세요(한글 IME로 `ㅛyes` 입력 시 인식 안 됨).
