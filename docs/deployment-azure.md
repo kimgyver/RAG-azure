@@ -128,10 +128,10 @@ SPA를 다시 빌드하고 (Static Web Apps, Storage static website 등) 호스�
 
 ```json
 {
-   "clientId": "<appId>",
-   "clientSecret": "<password>",
-   "subscriptionId": "<subscription-id>",
-   "tenantId": "<tenant-id>"
+  "clientId": "<appId>",
+  "clientSecret": "<password>",
+  "subscriptionId": "<subscription-id>",
+  "tenantId": "<tenant-id>"
 }
 ```
 
