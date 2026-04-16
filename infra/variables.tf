@@ -80,3 +80,8 @@ variable "chat_latency_p95_threshold_ms" {
   description = "Alert when p95 /api/chat request latency (ms) over 10 minutes exceeds this value."
   default     = 6000
 }
+
+variable "static_web_app_location" {
+  type    = string
+  default = "eastus2"
+}

@@ -207,3 +207,14 @@ resource "azurerm_linux_function_app" "ingestion" {
     var.extra_app_settings
   )
 }
+
+resource "azurerm_static_web_app" "frontend" {
+  name                = "${local.slug}-${random_id.suffix.hex}-swa"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = var.static_web_app_location
+  sku_size            = "Free"
+  sku_tier            = "Free"
+  tags                = local.common_tags
+
+  # 배포는 GitHub Actions에서 진행
+}
