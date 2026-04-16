@@ -159,7 +159,8 @@ function applyPromptBudget(question, contextText, memoryText, caps) {
     let guard = 0;
     while (text.length > caps.promptCharBudget && guard < 8) {
         const overflow = text.length - caps.promptCharBudget;
-        if (contextSection.length >= memorySection.length && contextSection.length > 300) {
+        if (contextSection.length >= memorySection.length &&
+            contextSection.length > 300) {
             contextSection = trimToLength(contextSection, Math.max(300, contextSection.length - overflow));
         }
         else if (memorySection.length > 180) {
@@ -338,7 +339,8 @@ async function chatHandler(request, context) {
         const memoryContext = buildMemoryContext(sanitizedMessages, payload.summaryMemory, caps);
         let queryEmbedding;
         if (configuredSearchMode !== "keyword" && embeddingsAvailable) {
-            queryEmbedding = (await generateEmbedding(normalizedQuestion)) ?? undefined;
+            queryEmbedding =
+                (await generateEmbedding(normalizedQuestion)) ?? undefined;
         }
         if (configuredSearchMode === "vector" && !queryEmbedding) {
             return {

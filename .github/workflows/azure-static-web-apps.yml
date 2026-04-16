@@ -11,6 +11,7 @@ jobs:
     env:
       VITE_UPLOAD_API_BASE_URL: https://ragdemo-8e73d3fb-fn.azurewebsites.net/api
       VITE_API_BASE_URL: https://ragdemo-8e73d3fb-fn.azurewebsites.net/api
+      VITE_UPLOAD_API_KEY: ${{ secrets.AZURE_FUNCTIONS_HOST_KEY }}
     steps:
       - uses: actions/checkout@v4
       - name: Set up Node.js

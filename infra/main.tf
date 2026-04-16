@@ -29,6 +29,8 @@ locals {
   existing_plan_name    = local.use_existing_plan ? local.plan_id_parts[1] : ""
   service_plan_id         = local.use_existing_plan ? data.azurerm_service_plan.external[0].id : azurerm_service_plan.functions[0].id
   function_app_location   = local.use_existing_plan ? data.azurerm_service_plan.external[0].location : var.location
+  static_web_app_origin   = "https://${azurerm_static_web_app.frontend.default_host_name}"
+  browser_cors_origins    = distinct(concat(var.blob_cors_origins, [local.static_web_app_origin]))
 }
 
 data "azurerm_service_plan" "external" {
@@ -59,7 +61,7 @@ resource "azurerm_storage_account" "main" {
       content {
         allowed_headers    = ["*"]
         allowed_methods    = ["DELETE", "GET", "HEAD", "MERGE", "OPTIONS", "PUT"]
-        allowed_origins    = var.blob_cors_origins
+        allowed_origins    = local.browser_cors_origins
         exposed_headers    = ["ETag", "x-ms-request-id", "x-ms-version"]
         max_age_in_seconds = 3600
       }
@@ -132,7 +134,7 @@ resource "azurerm_linux_function_app" "ingestion" {
 
     # Browser calls from local Vite (or your SPA URL) hit Functions cross-origin; without this, catalog/chat show "Failed to fetch".
     cors {
-      allowed_origins     = var.blob_cors_origins
+      allowed_origins     = local.browser_cors_origins
       support_credentials = false
     }
   }
