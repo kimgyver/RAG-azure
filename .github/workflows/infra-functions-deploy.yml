@@ -116,4 +116,5 @@ jobs:
         working-directory: ./backend/functions-ingestion
         run: |
           APP_NAME="$(terraform -chdir=../../infra output -raw function_app_name)"
-          func azure functionapp publish "$APP_NAME"
+          export FUNCTIONS_WORKER_RUNTIME=node
+          func azure functionapp publish "$APP_NAME" --typescript
