@@ -34,6 +34,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate AZURE_CREDENTIALS secret
+        run: |
+          if [ -z '${{ secrets.AZURE_CREDENTIALS }}' ]; then
+            echo "::error::Missing GitHub secret AZURE_CREDENTIALS"
+            exit 1
+          fi
+
+          echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -e '.clientId and .clientSecret and .subscriptionId and .tenantId' >/dev/null || {
+            echo "::error::AZURE_CREDENTIALS must be a JSON object with keys: clientId, clientSecret, subscriptionId, tenantId"
+            exit 1
+          }
+
       - name: Azure login
         uses: azure/login@v2
         with:
