@@ -118,6 +118,6 @@ async function createUploadHandler(
 app.http("uploads-create", {
   route: "uploads/create",
   methods: ["POST"],
-  authLevel: "function",
+  authLevel: "anonymous",
   handler: createUploadHandler
 });

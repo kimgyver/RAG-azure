@@ -61,6 +61,6 @@ async function getDocumentStatusHandler(request, context) {
 app.http("documents-status", {
     route: "documents/{documentId}",
     methods: ["GET"],
-    authLevel: "function",
+    authLevel: "anonymous",
     handler: getDocumentStatusHandler
 });
