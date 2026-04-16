@@ -367,6 +367,8 @@ function App() {
     }
 
     let isCancelled = false;
+    let consecutiveNotFoundCount = 0;
+    const maxNotFoundRetries = 5;
     const terminalStatuses = new Set<DocumentStatus>([
       "chunked",
       "skipped",
@@ -386,8 +388,22 @@ function App() {
         );
 
         if (!response.ok) {
+          if (response.status === 404) {
+            consecutiveNotFoundCount += 1;
+            if (consecutiveNotFoundCount >= maxNotFoundRetries) {
+              if (!isCancelled) {
+                setTrackedDocument(null);
+                setUploadMessage(
+                  "Upload completed but status metadata is not ready. Refresh catalog or re-upload if this persists."
+                );
+                void refreshCatalogWithRetries(2, 400);
+              }
+            }
+          }
           return;
         }
+
+        consecutiveNotFoundCount = 0;
 
         const payload = (await response.json()) as DocumentStatusResponse;
         if (isCancelled) {
