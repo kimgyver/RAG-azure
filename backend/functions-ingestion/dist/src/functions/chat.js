@@ -444,6 +444,6 @@ async function chatHandler(request, context) {
 app.http("chat", {
     route: "chat",
     methods: ["POST"],
-    authLevel: "function",
+    authLevel: "anonymous",
     handler: chatHandler
 });

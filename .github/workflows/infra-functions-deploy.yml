@@ -1,0 +1,83 @@
+name: Infra + Functions Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      terraform_apply:
+        description: "Run terraform apply"
+        required: true
+        default: true
+        type: boolean
+      publish_functions:
+        description: "Build and publish Azure Functions"
+        required: true
+        default: true
+        type: boolean
+  push:
+    branches:
+      - main
+    paths:
+      - "infra/**"
+      - "backend/functions-ingestion/**"
+      - ".github/workflows/infra-functions-deploy.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      TF_IN_AUTOMATION: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform init
+        working-directory: ./infra
+        run: terraform init -no-color
+
+      - name: Terraform plan
+        working-directory: ./infra
+        run: terraform plan -no-color
+
+      - name: Terraform apply
+        if: github.event_name == 'push' || inputs.terraform_apply
+        working-directory: ./infra
+        run: terraform apply -auto-approve -no-color
+
+      - name: Setup Node.js
+        if: github.event_name == 'push' || inputs.publish_functions
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Azure Functions Core Tools
+        if: github.event_name == 'push' || inputs.publish_functions
+        run: npm install -g azure-functions-core-tools@4 --unsafe-perm true
+
+      - name: Install backend dependencies
+        if: github.event_name == 'push' || inputs.publish_functions
+        working-directory: ./backend/functions-ingestion
+        run: npm ci
+
+      - name: Build backend
+        if: github.event_name == 'push' || inputs.publish_functions
+        working-directory: ./backend/functions-ingestion
+        run: npm run build
+
+      - name: Publish Function App
+        if: github.event_name == 'push' || inputs.publish_functions
+        working-directory: ./backend/functions-ingestion
+        run: |
+          APP_NAME="$(terraform -chdir=../../infra output -raw function_app_name)"
+          func azure functionapp publish "$APP_NAME"

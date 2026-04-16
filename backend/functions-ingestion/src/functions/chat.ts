@@ -738,6 +738,6 @@ async function chatHandler(
 app.http("chat", {
   route: "chat",
   methods: ["POST"],
-  authLevel: "function",
+  authLevel: "anonymous",
   handler: chatHandler
 });

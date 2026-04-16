@@ -54,10 +54,10 @@ npm run start
 
 ### Azure에 올릴 때 (한 줄 요약)
 
-1. `cd infra && terraform apply` — Storage·Service Bus·Function App 등 (**Cosmos / AI Search 리소스는 기본 생성 안 함**, 앱 설정도 꺼 둠).
-2. `backend/functions-ingestion`에서 `npm run build` 후 `func azure functionapp publish …`.
+1. `infra`와 `backend/functions-ingestion` 변경은 `Infra + Functions Deploy` 워크플로가 처리( Terraform apply + Functions publish ).
+2. `frontend` 변경은 `Azure Static Web Apps CI/CD` 워크플로가 처리( React build + SWA 배포 ).
 3. 포털 또는 `extra_app_settings`로 **AI Search**(또는 Cosmos) 연결 — 안 하면 카탈로그가 **503** ([deployment-azure.md §4](./docs/deployment-azure.md#4-optional-backends-azure-ai-search-cosmos-db-openai)).
-4. `frontend/.env`에 `VITE_UPLOAD_API_BASE_URL=https://<앱>.azurewebsites.net/api` 등 설정 후 빌드·호스팅.
+4. 프론트 빌드 환경변수에는 `VITE_UPLOAD_API_BASE_URL`만 사용하고, 비밀키는 넣지 않음.
 
 배포 후 화면 해석:
 
