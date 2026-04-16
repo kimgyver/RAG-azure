@@ -12,8 +12,8 @@ variable "project_name" {
 
 variable "app_service_plan_sku" {
   type        = string
-  description = "Linux App Service plan SKU when Terraform creates the plan. B1 or Y1. Ignored if existing_linux_service_plan_resource_id is set."
-  default     = "B1"
+  description = "Linux App Service plan SKU when Terraform creates the plan. Default Y1(Consumption) for demo/free-friendly usage. Ignored if existing_linux_service_plan_resource_id is set."
+  default     = "Y1"
 }
 
 variable "existing_linux_service_plan_resource_id" {
