@@ -22,7 +22,7 @@ locals {
   use_existing_plan = length(local.plan_id_trimmed) > 0
   # ARM: .../resourceGroups/<rg>/providers/Microsoft.Web/serverFarms/<name>
   plan_id_parts = local.use_existing_plan ? regex(
-    "resourceGroups/([^/]+)/providers/Microsoft.Web/serverFarms/([^/]+)$",
+    "resourceGroups/([^/]+)/providers/Microsoft.Web/[sS]erver[fF]arms/([^/]+)$",
     local.plan_id_trimmed
   ) : []
   existing_plan_rg_name = local.use_existing_plan ? local.plan_id_parts[0] : ""
