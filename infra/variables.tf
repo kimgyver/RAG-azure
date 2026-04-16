@@ -39,6 +39,12 @@ variable "blob_cors_origins" {
   ]
 }
 
+variable "static_web_app_origin" {
+  type        = string
+  description = "Optional deployed Static Web App origin for Function/Blob CORS (e.g. https://<app>.azurestaticapps.net). Keep empty on first apply."
+  default     = ""
+}
+
 variable "tags" {
   type        = map(string)
   description = "Tags applied to all resources."

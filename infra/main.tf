@@ -29,8 +29,8 @@ locals {
   existing_plan_name    = local.use_existing_plan ? local.plan_id_parts[1] : ""
   service_plan_id         = local.use_existing_plan ? data.azurerm_service_plan.external[0].id : azurerm_service_plan.functions[0].id
   function_app_location   = local.use_existing_plan ? data.azurerm_service_plan.external[0].location : var.location
-  static_web_app_origin   = "https://${azurerm_static_web_app.frontend.default_host_name}"
-  browser_cors_origins    = distinct(concat(var.blob_cors_origins, [local.static_web_app_origin]))
+  # Keep CORS inputs deterministic during initial apply to avoid provider plan drift bugs.
+  browser_cors_origins = distinct(compact(concat(var.blob_cors_origins, [trimspace(var.static_web_app_origin)])))
 }
 
 data "azurerm_service_plan" "external" {

@@ -13,6 +13,7 @@
 # location   = "eastus"
 # project_name = "ragdemo"
 # app_service_plan_sku = "Y1"   # only if Terraform creates the plan AND you have Consumption quota
+# static_web_app_origin = "https://<your-app>.azurestaticapps.net"  # optional; add after SWA is created
 # blob_cors_origins = ["http://localhost:5173", "https://your-frontend.azurestaticapps.net"]
 # extra_app_settings = {
 #   BLOB_TRIGGER_SOURCE = "EventGrid"
