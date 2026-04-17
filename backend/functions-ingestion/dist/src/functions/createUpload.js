@@ -2,6 +2,7 @@ import { app } from "@azure/functions";
 import { randomUUID } from "node:crypto";
 import { createUploadSasUrl, sanitizeFileName } from "../shared/sas.js";
 import { isTenantAllowed, tenantNotAllowedMessage } from "../shared/tenantPolicy.js";
+import { upsertDocumentMetadata } from "../shared/documentMetadataStore.js";
 function badRequest(message) {
     return {
         status: 400,
@@ -60,6 +61,13 @@ async function createUploadHandler(request, context) {
             uploadUrl,
             expiresInMinutes: expiryMinutes
         };
+        await upsertDocumentMetadata({
+            documentId,
+            tenantId,
+            blobName,
+            status: "queued",
+            contentType: payload.contentType
+        }, context);
         return {
             status: 200,
             jsonBody: body,

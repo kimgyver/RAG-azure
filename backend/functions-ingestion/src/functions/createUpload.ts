@@ -10,6 +10,7 @@ import {
   isTenantAllowed,
   tenantNotAllowedMessage
 } from "../shared/tenantPolicy.js";
+import { upsertDocumentMetadata } from "../shared/documentMetadataStore.js";
 
 type CreateUploadRequest = {
   tenantId?: string;
@@ -96,6 +97,17 @@ async function createUploadHandler(
       uploadUrl,
       expiresInMinutes: expiryMinutes
     };
+
+    await upsertDocumentMetadata(
+      {
+        documentId,
+        tenantId,
+        blobName,
+        status: "queued",
+        contentType: payload.contentType
+      },
+      context
+    );
 
     return {
       status: 200,
