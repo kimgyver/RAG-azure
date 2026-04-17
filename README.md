@@ -97,3 +97,7 @@ npm run start
 - **장점**: 한 파일에 설계·운영·로컬 절차가 모두 있어 온보딩에 유리했음.
 - **개선**: 길이가 길어져 역할별 탐색이 어려워, 위 문서로 나눔. “무엇을 왜 쓰는가”는 `architecture` / `design-and-scope`, “어떻게 돌리는가”는 `development`·`deployment-azure`에 모음.
 - **중복**: 파이프라인 단계 설명이 아키텍처 문서와 개발 Step에 각각 있음. 전자는 **개념·현재 구현 요약**, 후자는 **작업 순서·명령** 기준으로 유지함.
+
+## Website address
+
+https://ambitious-ocean-078950f0f.1.azurestaticapps.net
