@@ -1,204 +1,29 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-
-type DocumentStatus =
-  | "waiting"
-  | "uploading"
-  | "queued"
-  | "processing"
-  | "chunked"
-  | "skipped"
-  | "indexed"
-  | "failed";
-
-type DocumentItem = {
-  id: string;
-  fileName: string;
-  status: DocumentStatus;
-  updatedAt: string;
-  tenantId?: string;
-  contentLength?: number;
-  chunkCount?: number;
-  errorMessage?: string;
-};
-
-type ChatMessage = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  citations?: string[];
-};
-
-type ChatResponse = {
-  answer: string;
-  citations: Array<{
-    documentId: string;
-    fileName: string;
-    blobName: string;
-    chunkIndex: number;
-    snippet: string;
-    score?: number;
-  }>;
-  usage: {
-    tenantId: string;
-    retrievedChunks: number;
-  };
-  memory?: {
-    sessionId: string;
-    summary: string;
-    recentTurnsUsed: number;
-  };
-};
-
-type UploadState = "idle" | "requesting-sas" | "uploading" | "done" | "error";
-
-type CreateUploadResponse = {
-  documentId: string;
-  tenantId: string;
-  blobName: string;
-  uploadUrl: string;
-  expiresInMinutes: number;
-};
-
-type DocumentStatusResponse = {
-  id: string;
-  documentId: string;
-  tenantId: string;
-  blobName: string;
-  status: Exclude<DocumentStatus, "waiting" | "uploading">;
-  contentType?: string;
-  contentLength?: number;
-  chunkCount?: number;
-  errorMessage?: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
-type RuntimeConfigSnapshot = {
-  cosmosDbEnabled: boolean;
-  searchEnabled: boolean;
-  embeddingPipelineEnabled: boolean;
-  chatSearchMode: "keyword" | "hybrid" | "vector";
-  ocrEnabled: boolean;
-  openAiChatConfigured: boolean;
-  tenantAllowlistActive: boolean;
-};
-
-function searchModeLabel(
-  mode: RuntimeConfigSnapshot["chatSearchMode"]
-): string {
-  switch (mode) {
-    case "keyword":
-      return "keyword";
-    case "vector":
-      return "vector";
-    default:
-      return "hybrid";
-  }
-}
-
-type CatalogCosmos = {
-  status: string;
-  updatedAt: string;
-  chunkCount?: number;
-  contentType?: string;
-};
-
-type CatalogSearch = {
-  chunkCount: number;
-  fileName: string;
-  blobName: string;
-};
-
-type CatalogDocumentRow = {
-  documentId: string;
-  tenantId: string;
-  fileName: string;
-  blobName: string;
-  cosmos: CatalogCosmos | null;
-  search: CatalogSearch | null;
-};
-
-type CatalogResponse = {
-  tenantId: string;
-  documents: CatalogDocumentRow[];
-  sources: { cosmos: boolean; search: boolean };
-};
-
-type PurgeResponse = {
-  documentId: string;
-  tenantId: string;
-  deletedSearchChunks: number;
-  remainingSearchChunks?: number;
-  cosmosDeleted: boolean;
-  note?: string;
-};
-
-const initialChatMessages: ChatMessage[] = [
-  {
-    id: "assistant-1",
-    role: "assistant",
-    content:
-      "I only search documents uploaded for this tenant. Upload on the left, then ask a question."
-  }
-];
-
-const statusLabel: Record<DocumentStatus, string> = {
-  waiting: "Waiting",
-  uploading: "Uploading",
-  queued: "Queued",
-  processing: "Processing",
-  chunked: "Chunked",
-  skipped: "Skipped",
-  indexed: "Indexed",
-  failed: "Failed"
-};
-
-function relativeTimeLabel(input: string): string {
-  const deltaMs = Date.now() - new Date(input).getTime();
-  if (!Number.isFinite(deltaMs) || deltaMs < 0) {
-    return "just now";
-  }
-
-  const minutes = Math.floor(deltaMs / 60000);
-  if (minutes <= 0) {
-    return "just now";
-  }
-  if (minutes < 60) {
-    return `${minutes}m ago`;
-  }
-
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) {
-    return `${hours}h ago`;
-  }
-
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
-function extractApiMessage(raw: string, fallback: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    return fallback;
-  }
-
-  try {
-    const parsed = JSON.parse(trimmed) as { message?: string };
-    if (typeof parsed?.message === "string" && parsed.message.trim()) {
-      return parsed.message.trim();
-    }
-  } catch {
-    // Keep raw text fallback.
-  }
-
-  return trimmed;
-}
-
-function waitMs(ms: number): Promise<void> {
-  return new Promise(resolve => {
-    window.setTimeout(resolve, ms);
-  });
-}
+import { CatalogPanel } from "./components/CatalogPanel";
+import { ChatPanel } from "./components/ChatPanel";
+import { HeroHeader } from "./components/HeroHeader";
+import { TenantContextBar } from "./components/TenantContextBar";
+import { UploadPanel } from "./components/UploadPanel";
+import {
+  initialChatMessages,
+  type CatalogDocumentRow,
+  type CatalogResponse,
+  type ChatMessage,
+  type ChatResponse,
+  type CreateUploadResponse,
+  type DocumentItem,
+  type DocumentStatus,
+  type DocumentStatusResponse,
+  type PurgeResponse,
+  type RuntimeConfigSnapshot,
+  type UploadState
+} from "./types/app";
+import {
+  buildTenantChatSessionId,
+  extractApiMessage,
+  relativeTimeLabel,
+  waitMs
+} from "./utils/app";
 
 function App() {
   const defaultTenantId = useMemo(
@@ -207,11 +32,16 @@ function App() {
   );
   const [tenantId, setTenantId] = useState<string>(defaultTenantId);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
-  const [chatMessages, setChatMessages] =
-    useState<ChatMessage[]>(initialChatMessages);
+  const [chatMessagesByTenant, setChatMessagesByTenant] = useState<
+    Record<string, ChatMessage[]>
+  >({
+    [defaultTenantId]: initialChatMessages
+  });
   const [chatInput, setChatInput] = useState<string>("");
   const [chatPending, setChatPending] = useState<boolean>(false);
-  const [chatSummaryMemory, setChatSummaryMemory] = useState<string>("");
+  const [chatSummaryMemoryByTenant, setChatSummaryMemoryByTenant] = useState<
+    Record<string, string>
+  >({});
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadState, setUploadState] = useState<UploadState>("idle");
   const [uploadMessage, setUploadMessage] = useState<string>(
@@ -253,9 +83,12 @@ function App() {
 
   const effectiveTenantId = tenantId.trim() || defaultTenantId;
   const chatSessionId = useMemo(
-    () => `web-${Math.random().toString(36).slice(2, 10)}`,
-    []
+    () => buildTenantChatSessionId(effectiveTenantId),
+    [effectiveTenantId]
   );
+  const chatMessages =
+    chatMessagesByTenant[effectiveTenantId] ?? initialChatMessages;
+  const chatSummaryMemory = chatSummaryMemoryByTenant[effectiveTenantId] ?? "";
   const searchOnlyMode =
     runtimeConfigStatus === "ok" && runtimeConfig
       ? !runtimeConfig.openAiChatConfigured
@@ -360,6 +193,18 @@ function App() {
       cancelled = true;
     };
   }, [uploadApiBaseUrl, uploadApiKey]);
+
+  useEffect(() => {
+    setChatMessagesByTenant(prev => {
+      if (prev[effectiveTenantId]) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [effectiveTenantId]: initialChatMessages
+      };
+    });
+  }, [effectiveTenantId]);
 
   useEffect(() => {
     if (!trackedDocument) {
@@ -594,18 +439,27 @@ function App() {
       return;
     }
 
+    const tenantScopedMessages =
+      chatMessagesByTenant[effectiveTenantId] ?? initialChatMessages;
+
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       role: "user",
       content: question
     };
 
-    setChatMessages(prev => [...prev, userMessage]);
+    setChatMessagesByTenant(prev => ({
+      ...prev,
+      [effectiveTenantId]: [
+        ...(prev[effectiveTenantId] ?? initialChatMessages),
+        userMessage
+      ]
+    }));
     setChatInput("");
     setChatPending(true);
 
     try {
-      const messagesForMemory = [...chatMessages, userMessage]
+      const messagesForMemory = [...tenantScopedMessages, userMessage]
         .filter(
           message => message.role === "user" || message.role === "assistant"
         )
@@ -642,7 +496,10 @@ function App() {
       const payload = (await response.json()) as ChatResponse;
       setTenantError("");
       if (payload.memory?.summary) {
-        setChatSummaryMemory(payload.memory.summary);
+        setChatSummaryMemoryByTenant(prev => ({
+          ...prev,
+          [effectiveTenantId]: payload.memory?.summary ?? ""
+        }));
       }
       const assistantMessage: ChatMessage = {
         id: `assistant-${Date.now()}`,
@@ -653,7 +510,13 @@ function App() {
         )
       };
 
-      setChatMessages(prev => [...prev, assistantMessage]);
+      setChatMessagesByTenant(prev => ({
+        ...prev,
+        [effectiveTenantId]: [
+          ...(prev[effectiveTenantId] ?? initialChatMessages),
+          assistantMessage
+        ]
+      }));
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
@@ -661,14 +524,17 @@ function App() {
         setTenantError("tenantId is not allowed for this deployment.");
       }
 
-      setChatMessages(prev => [
+      setChatMessagesByTenant(prev => ({
         ...prev,
-        {
-          id: `assistant-error-${Date.now()}`,
-          role: "assistant",
-          content: `Could not process your question. ${errorMessage}`
-        }
-      ]);
+        [effectiveTenantId]: [
+          ...(prev[effectiveTenantId] ?? initialChatMessages),
+          {
+            id: `assistant-error-${Date.now()}`,
+            role: "assistant",
+            content: `Could not process your question. ${errorMessage}`
+          }
+        ]
+      }));
     } finally {
       setChatPending(false);
     }
@@ -723,367 +589,60 @@ function App() {
 
   return (
     <div className="app-shell">
-      <header className="hero">
-        <div>
-          <p className="eyebrow">Azure-native RAG demo</p>
-          <h1>Upload, index, and chat in one screen</h1>
-          <p className="hero-copy">
-            Upload to Blob with a SAS token, process asynchronously via a queue,
-            retrieve with Azure AI Search, and—depending on configuration—try
-            embeddings, hybrid search, and generative answers. The box on the
-            right reflects your Functions deployment flags. If{" "}
-            <code className="inline-code">ALLOWED_TENANT_IDS</code> is empty,
-            any tenant ID is accepted; otherwise only listed IDs are allowed.
-          </p>
-        </div>
-        <div className="hero-stats">
-          {runtimeConfigStatus === "loading" ? (
-            <div>
-              <span>Backend flags</span>
-              <strong>Loading…</strong>
-            </div>
-          ) : runtimeConfigStatus === "error" || !runtimeConfig ? (
-            <div>
-              <span>Backend flags</span>
-              <strong>Could not load</strong>
-              <p className="hero-stat-sub">
-                Check that Functions is reachable at{" "}
-                <code className="inline-code">VITE_UPLOAD_API_BASE_URL</code>.
-                Upload and chat may also need{" "}
-                <code className="inline-code">VITE_UPLOAD_API_KEY</code>.
-              </p>
-            </div>
-          ) : (
-            <>
-              <div>
-                <span>Cosmos · document state</span>
-                <strong>{runtimeConfig.cosmosDbEnabled ? "On" : "Off"}</strong>
-                <p className="hero-stat-sub">{cosmosStateSummary}</p>
-                <p className="hero-stat-sub hero-stat-sub-secondary">
-                  {runtimeConfig.tenantAllowlistActive
-                    ? "Allowlisted tenants only (ALLOWED_TENANT_IDS)"
-                    : "No tenant restriction · local default"}
-                </p>
-              </div>
-              <div>
-                <span>AI Search · indexing</span>
-                <strong>{runtimeConfig.searchEnabled ? "On" : "Off"}</strong>
-                <p className="hero-stat-sub">
-                  Embeddings{" "}
-                  {runtimeConfig.embeddingPipelineEnabled ? "on" : "off"} · chat{" "}
-                  {searchModeLabel(runtimeConfig.chatSearchMode)} · image OCR{" "}
-                  {runtimeConfig.ocrEnabled ? "on" : "off"}
-                </p>
-              </div>
-              <div>
-                <span>Chat answers</span>
-                <strong>
-                  {runtimeConfig.openAiChatConfigured
-                    ? "Generative"
-                    : "Search snippets only"}
-                </strong>
-                <p className="hero-stat-sub">{chatModeSummary}</p>
-                <p className="hero-stat-sub hero-stat-sub-secondary">
-                  {runtimeConfig.openAiChatConfigured
-                    ? "OPENAI_API_KEY set — GPT-style answers"
-                    : "OPENAI_API_KEY not set yet — fallback mode is expected"}
-                </p>
-              </div>
-            </>
-          )}
-        </div>
-      </header>
+      <HeroHeader
+        runtimeConfigStatus={runtimeConfigStatus}
+        runtimeConfig={runtimeConfig}
+        cosmosStateSummary={cosmosStateSummary}
+        chatModeSummary={chatModeSummary}
+      />
 
-      <div className="tenant-context-bar">
-        <div className="tenant-context-row">
-          <label className="tenant-context-label" htmlFor="tenant-id">
-            Tenant ID
-          </label>
-          <input
-            id="tenant-id"
-            className="tenant-context-input"
-            type="text"
-            value={tenantId}
-            onChange={event => {
-              setTenantId(event.target.value);
-              if (tenantError) {
-                setTenantError("");
-              }
-            }}
-            placeholder={defaultTenantId}
-            spellCheck={false}
-            autoComplete="off"
-            aria-describedby="tenant-context-desc"
-          />
-          <span className="tenant-context-sep" aria-hidden="true">
-            →
-          </span>
-          <code className="tenant-context-id" title="Value sent to the API">
-            {effectiveTenantId}
-          </code>
-        </div>
-        {tenantError ? (
-          <p className="tenant-context-error" role="alert">
-            {tenantError}
-          </p>
-        ) : null}
-        <p id="tenant-context-desc" className="tenant-context-desc">
-          Upload, blob path, indexing, chat retrieval, catalog, and purge all
-          use the <strong>same</strong> tenant. Leave blank for default{" "}
-          <code className="inline-code">{defaultTenantId}</code> from{" "}
-          <code className="inline-code">VITE_TENANT_ID</code>.
-        </p>
-      </div>
+      <TenantContextBar
+        tenantId={tenantId}
+        effectiveTenantId={effectiveTenantId}
+        defaultTenantId={defaultTenantId}
+        tenantError={tenantError}
+        onTenantIdChange={value => {
+          setTenantId(value);
+          if (tenantError) {
+            setTenantError("");
+          }
+        }}
+      />
 
       <main className="main-stack">
         <div className="workspace-grid">
-          <section className="panel panel-upload">
-            <div className="panel-header">
-              <div>
-                <p className="panel-kicker">Upload</p>
-                <h2>Document upload</h2>
-              </div>
-              <span className="panel-tag">SAS direct upload</span>
-            </div>
+          <UploadPanel
+            onFileChange={onFileChange}
+            onStartUpload={startUpload}
+            uploadState={uploadState}
+            uploadMessage={uploadMessage}
+            effectiveTenantId={effectiveTenantId}
+            uploadApiBaseUrl={uploadApiBaseUrl}
+            documents={documents}
+          />
 
-            <label className="dropzone" htmlFor="file-upload">
-              <input id="file-upload" type="file" onChange={onFileChange} />
-              <span className="dropzone-icon">+</span>
-              <strong>Choose PDF, PNG, or JPG</strong>
-              <p>
-                After you start upload, the app requests a SAS URL and the
-                browser PUTs the file to Blob Storage. PNG and JPEG can be OCR’d
-                on the server for text.
-              </p>
-            </label>
-
-            <div className="upload-actions">
-              <button type="button" onClick={startUpload}>
-                Start upload
-              </button>
-              <p className={`upload-hint upload-${uploadState}`}>
-                {uploadMessage}
-              </p>
-            </div>
-
-            <div className="upload-meta-grid">
-              <div className="meta-card">
-                <span>Blob path prefix</span>
-                <strong>{effectiveTenantId}/YYYY/MM/</strong>
-              </div>
-              <div className="meta-card">
-                <span>API base URL</span>
-                <strong>{uploadApiBaseUrl}</strong>
-              </div>
-            </div>
-
-            <div className="timeline-card">
-              <div className="timeline-header">
-                <h3>Processing status</h3>
-                <span>Recent uploads</span>
-              </div>
-
-              <ul className="document-list">
-                {documents.map(item => (
-                  <li key={item.id} className="document-row">
-                    <div>
-                      <strong>{item.fileName}</strong>
-                      <p>{item.updatedAt}</p>
-                    </div>
-                    <span className={`status-pill status-${item.status}`}>
-                      {statusLabel[item.status]}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </section>
-
-          <section className="panel panel-chat">
-            <div className="panel-header">
-              <div>
-                <p className="panel-kicker">Chat</p>
-                <h2>RAG chatbot</h2>
-              </div>
-              <span className="panel-tag">Tenant-scoped search</span>
-            </div>
-
-            {runtimeConfigStatus === "ok" && runtimeConfig ? (
-              <div
-                className={`mode-callout ${searchOnlyMode ? "mode-callout-warning" : "mode-callout-ok"}`}
-              >
-                <strong>
-                  {searchOnlyMode
-                    ? "Search-only fallback mode"
-                    : "Generative answer mode"}
-                </strong>
-                <p>
-                  {searchOnlyMode
-                    ? "This is not an error. The assistant is answering from Azure AI Search results because no OpenAI credential is configured yet."
-                    : "Search results are retrieved first and then condensed into a model-generated answer."}
-                </p>
-              </div>
-            ) : null}
-
-            <div className="chat-stream">
-              {chatMessages.map(message => (
-                <article
-                  key={message.id}
-                  className={`message message-${message.role}`}
-                >
-                  <span className="message-role">
-                    {message.role === "user" ? "You" : "Assistant"}
-                  </span>
-                  <p>{message.content}</p>
-                  {message.citations?.length ? (
-                    <small>Sources: {message.citations.join(" / ")}</small>
-                  ) : null}
-                </article>
-              ))}
-            </div>
-
-            <form
-              className="chat-composer"
-              onSubmit={event => {
-                event.preventDefault();
-                void sendChat();
-              }}
-            >
-              <label className="composer-label" htmlFor="chat-input">
-                Your question
-              </label>
-              <textarea
-                id="chat-input"
-                rows={4}
-                placeholder="e.g. What does the contract say about termination?"
-                value={chatInput}
-                onChange={event => setChatInput(event.target.value)}
-                onKeyDown={event => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    void sendChat();
-                  }
-                }}
-                disabled={chatPending}
-              />
-              <div className="composer-actions">
-                <div className="composer-hint">
-                  Search always runs first. The runtime flag above decides
-                  whether the final answer is search-only or model-generated.
-                </div>
-                <button
-                  type="submit"
-                  disabled={chatPending || !chatInput.trim()}
-                >
-                  {chatPending ? "Working…" : "Send question"}
-                </button>
-              </div>
-            </form>
-          </section>
+          <ChatPanel
+            runtimeConfigStatus={runtimeConfigStatus}
+            runtimeConfig={runtimeConfig}
+            searchOnlyMode={searchOnlyMode}
+            chatMessages={chatMessages}
+            chatInput={chatInput}
+            chatPending={chatPending}
+            onSendChat={sendChat}
+            onChatInputChange={setChatInput}
+          />
         </div>
 
-        <section
-          className="panel catalog-panel"
-          aria-labelledby="catalog-heading"
-        >
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">Admin</p>
-              <h2 id="catalog-heading">Cosmos · Search document catalog</h2>
-            </div>
-            <div className="catalog-actions">
-              <button type="button" onClick={() => void loadCatalog()}>
-                Refresh list
-              </button>
-            </div>
-          </div>
-          <p
-            className={`catalog-meta ${
-              catalogStatus === "error" ? "catalog-error" : ""
-            } ${catalogStatus === "ok" ? "catalog-ok" : ""}`}
-          >
-            {catalogStatus === "loading"
-              ? "Loading catalog…"
-              : catalogMessage || "Merged rows for the current tenant."}
-          </p>
-          {runtimeConfigStatus === "ok" && runtimeConfig ? (
-            <p className="catalog-mode-note">
-              {runtimeConfig.cosmosDbEnabled
-                ? "Cosmos metadata is active. Upload status and catalog rows are persisted in Cosmos and merged with Search chunks below."
-                : "Cosmos metadata is off. Catalog rows below come from Search only until Cosmos is enabled."}
-            </p>
-          ) : null}
-          <div className="catalog-table-wrap">
-            <table className="catalog-table">
-              <thead>
-                <tr>
-                  <th scope="col">documentId</th>
-                  <th scope="col">File</th>
-                  <th scope="col">Cosmos</th>
-                  <th scope="col">Search chunks</th>
-                  <th scope="col">Delete</th>
-                </tr>
-              </thead>
-              <tbody>
-                {catalogRows.length === 0 && catalogStatus === "ok" ? (
-                  <tr>
-                    <td colSpan={5} className="catalog-empty">
-                      No documents for this tenant. Upload files or switch
-                      tenant.
-                    </td>
-                  </tr>
-                ) : null}
-                {catalogRows.map(row => (
-                  <tr key={row.documentId}>
-                    <td className="mono">{row.documentId}</td>
-                    <td>{row.fileName}</td>
-                    <td>
-                      {row.cosmos ? (
-                        <>
-                          {row.cosmos.status}
-                          <br />
-                          <small className="catalog-sub">
-                            {row.cosmos.chunkCount != null
-                              ? `${row.cosmos.chunkCount} chunks · `
-                              : ""}
-                            {row.cosmos.updatedAt?.slice(0, 19) ?? ""}
-                          </small>
-                        </>
-                      ) : (
-                        <span className="muted">—</span>
-                      )}
-                    </td>
-                    <td>
-                      {row.search ? (
-                        <>{row.search.chunkCount} chunks</>
-                      ) : (
-                        <span className="muted">—</span>
-                      )}
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="btn-danger"
-                        disabled={
-                          purgeBusyId !== null || (!row.cosmos && !row.search)
-                        }
-                        onClick={() => void handlePurgeDocument(row.documentId)}
-                      >
-                        {purgeBusyId === row.documentId
-                          ? "Deleting…"
-                          : "Purge index data"}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="catalog-footnote">
-            Purge removes AI Search chunks and Cosmos metadata only. Blobs in
-            storage are not deleted.
-          </p>
-        </section>
+        <CatalogPanel
+          loadCatalog={loadCatalog}
+          catalogStatus={catalogStatus}
+          catalogMessage={catalogMessage}
+          runtimeConfigStatus={runtimeConfigStatus}
+          runtimeConfig={runtimeConfig}
+          catalogRows={catalogRows}
+          purgeBusyId={purgeBusyId}
+          onPurgeDocument={handlePurgeDocument}
+        />
       </main>
     </div>
   );
