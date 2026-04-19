@@ -7,7 +7,7 @@ variable "location" {
 variable "project_name" {
   type        = string
   description = "Short name used in resource names (letters/digits; keep short for storage account 24-char limit)."
-  default     = "ragdemo"
+  default     = "ragapp"
 }
 
 variable "name_suffix" {

@@ -11,7 +11,8 @@
 # existing_linux_service_plan_resource_id = "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Web/serverFarms/<planName>"
 #
 # location   = "eastus"
-# project_name = "ragdemo"
+# project_name = "ragapp"
+# name_suffix = "prod01"  # optional fixed suffix (letters/digits). Example names: ragapp-prod01-fn / ragapp-prod01-swa
 # app_service_plan_sku = "Y1"   # only if Terraform creates the plan AND you have Consumption quota
 # static_web_app_sku_tier = "Free"      # keep Free plan by default
 # static_web_app_sku_size = "Free"

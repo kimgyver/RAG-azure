@@ -13,7 +13,7 @@ jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
     env:
-      TF_PROJECT_NAME: ${{ vars.TF_PROJECT_NAME }}
+      TF_PROJECT_NAME: ${{ vars.TF_PROJECT_NAME || 'ragapp' }}
       TF_NAME_SUFFIX: ${{ vars.TF_NAME_SUFFIX }}
       AZURE_CREDENTIALS_JSON: ${{ secrets.AZURE_CREDENTIALS }}
     steps:
@@ -29,7 +29,7 @@ jobs:
           if [ -n "${SWA_NAME_FROM_VAR:-}" ]; then
             SWA_NAME="$SWA_NAME_FROM_VAR"
           else
-            PROJECT_RAW="${TF_PROJECT_NAME:-ragdemo}"
+            PROJECT_RAW="${TF_PROJECT_NAME:-ragapp}"
             SLUG="$(echo "$PROJECT_RAW" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-14)"
             if [ -z "$SLUG" ]; then
               SLUG="app"
@@ -126,29 +126,28 @@ jobs:
         shell: bash
         env:
           API_BASE_URL_FROM_VAR: ${{ vars.VITE_API_BASE_URL }}
-          TF_PROJECT_NAME: ${{ vars.TF_PROJECT_NAME }}
         run: |
           set -euo pipefail
 
           if [ -n "${API_BASE_URL_FROM_VAR:-}" ]; then
             BASE_URL="${API_BASE_URL_FROM_VAR%/}"
-          elif [ -n "${AZURE_CREDENTIALS_JSON:-}" ]; then
-            SUBSCRIPTION_ID="$(echo "$AZURE_CREDENTIALS_JSON" | jq -r '.subscriptionId // empty')"
-            if [ -z "$SUBSCRIPTION_ID" ]; then
-              echo "::error::AZURE_CREDENTIALS is set but subscriptionId is missing"
-              exit 1
+          elif [ "${HAS_AZURE_CREDENTIALS:-false}" = "true" ] && [ -n "${SWA_NAME:-}" ] && [ -n "${SWA_RG:-}" ]; then
+            CANDIDATE_FN="${SWA_NAME%-swa}fn"
+            if az functionapp show --name "$CANDIDATE_FN" --resource-group "$SWA_RG" >/dev/null 2>&1; then
+              BASE_URL="https://${CANDIDATE_FN}.azurewebsites.net/api"
+            else
+              FN_COUNT="$(az functionapp list --resource-group "$SWA_RG" --query 'length(@)' -o tsv)"
+              if [ "$FN_COUNT" = "1" ]; then
+                FN_NAME="$(az functionapp list --resource-group "$SWA_RG" --query '[0].name' -o tsv)"
+                BASE_URL="https://${FN_NAME}.azurewebsites.net/api"
+              else
+                echo "::warning::Could not uniquely resolve Function App in $SWA_RG (found $FN_COUNT)."
+                echo "Set repository variable VITE_API_BASE_URL to the intended backend endpoint."
+                exit 0
+              fi
             fi
-
-            PROJECT_RAW="${TF_PROJECT_NAME:-ragdemo}"
-            SLUG="$(echo "$PROJECT_RAW" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-14)"
-            if [ -z "$SLUG" ]; then
-              SLUG="app"
-            fi
-
-            SUFFIX="$(printf '%s' "${SUBSCRIPTION_ID}:${SLUG}" | md5sum | cut -c1-8)"
-            BASE_URL="https://${SLUG}-${SUFFIX}-fn.azurewebsites.net/api"
           else
-            echo "::warning::VITE_API_BASE_URL variable and AZURE_CREDENTIALS secret are not set. Frontend will use its default /api base."
+            echo "::warning::VITE_API_BASE_URL not set and Azure lookup unavailable. Frontend will use its default /api base."
             exit 0
           fi
 
