@@ -31,6 +31,8 @@ jobs:
     env:
       TF_IN_AUTOMATION: "true"
       TF_VAR_app_service_plan_sku: "Y1"
+      TF_VAR_project_name: ${{ vars.TF_PROJECT_NAME }}
+      TF_VAR_name_suffix: ${{ vars.TF_NAME_SUFFIX }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

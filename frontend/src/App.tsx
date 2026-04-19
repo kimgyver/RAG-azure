@@ -75,15 +75,14 @@ function App() {
   const [tenantError, setTenantError] = useState<string>("");
 
   const uploadApiBaseUrl = useMemo(() => {
-    const fromEnv = import.meta.env.VITE_UPLOAD_API_BASE_URL?.trim();
+    const fromEnv =
+      import.meta.env.VITE_UPLOAD_API_BASE_URL?.trim() ||
+      import.meta.env.VITE_API_BASE_URL?.trim();
     if (fromEnv) {
       return fromEnv.replace(/\/$/, "");
     }
-    // `npm run dev`: Vite proxies `/api` → 127.0.0.1:7071 (avoids CORS / host mismatch)
-    if (import.meta.env.DEV) {
-      return "/api";
-    }
-    return "http://localhost:7071/api";
+    // Default to relative /api in both local and deployed frontend to avoid hardcoded hosts.
+    return "/api";
   }, []);
 
   const uploadApiKey = useMemo(

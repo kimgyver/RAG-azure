@@ -1,6 +1,4 @@
-resource "random_id" "suffix" {
-  byte_length = 4
-}
+data "azurerm_client_config" "current" {}
 
 locals {
   base_slug_chars = [
@@ -9,10 +7,16 @@ locals {
   ]
   base_slug = substr(join("", local.base_slug_chars), 0, 14)
   slug      = length(local.base_slug) > 0 ? local.base_slug : "app"
+  suffix_chars = [
+    for ch in split("", lower(trimspace(var.name_suffix))) : ch
+    if length(regexall("[a-z0-9]", ch)) > 0
+  ]
+  auto_name_suffix = substr(md5("${data.azurerm_client_config.current.subscription_id}:${local.slug}"), 0, 8)
+  name_suffix      = length(local.suffix_chars) > 0 ? substr(join("", local.suffix_chars), 0, 8) : local.auto_name_suffix
   # Storage account: 3–24 chars, lower-case letters and numbers only
-  storage_account_name = substr("${local.slug}${random_id.suffix.hex}", 0, 24)
+  storage_account_name = substr("${local.slug}${local.name_suffix}", 0, 24)
   # Function app name: alphanumeric and hyphens, max 60, globally unique
-  function_app_name = "${local.slug}-${random_id.suffix.hex}-fn"
+  function_app_name = "${local.slug}-${local.name_suffix}-fn"
   common_tags = merge(
     { workload = "rag-ingestion" },
     var.tags
@@ -40,7 +44,7 @@ data "azurerm_service_plan" "external" {
 }
 
 resource "azurerm_resource_group" "main" {
-  name     = "${local.slug}-${random_id.suffix.hex}-rg"
+  name     = "${local.slug}-${local.name_suffix}-rg"
   location = var.location
   tags     = local.common_tags
 }
@@ -77,7 +81,7 @@ resource "azurerm_storage_container" "uploads" {
 
 resource "azurerm_servicebus_namespace" "main" {
   # Azure disallows names ending in "-sb" or "-mgmt" (reserved suffixes).
-  name                = "${local.slug}-sb-${random_id.suffix.hex}"
+  name                = "${local.slug}-sb-${local.name_suffix}"
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
   sku                 = "Basic"
@@ -99,7 +103,7 @@ resource "azurerm_servicebus_namespace_authorization_rule" "functions" {
 
 resource "azurerm_service_plan" "functions" {
   count               = local.use_existing_plan ? 0 : 1
-  name                = "${local.slug}-${random_id.suffix.hex}-asp"
+  name                = "${local.slug}-${local.name_suffix}-asp"
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
   os_type             = "Linux"
@@ -108,7 +112,7 @@ resource "azurerm_service_plan" "functions" {
 }
 
 resource "azurerm_application_insights" "main" {
-  name                = "${local.slug}-${random_id.suffix.hex}-ai"
+  name                = "${local.slug}-${local.name_suffix}-ai"
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
   application_type    = "web"
@@ -211,11 +215,11 @@ resource "azurerm_linux_function_app" "ingestion" {
 }
 
 resource "azurerm_static_web_app" "frontend" {
-  name                = "${local.slug}-${random_id.suffix.hex}-swa"
+  name                = "${local.slug}-${local.name_suffix}-swa"
   resource_group_name = azurerm_resource_group.main.name
   location            = var.static_web_app_location
-  sku_size            = "Free"
-  sku_tier            = "Free"
+  sku_size            = var.static_web_app_sku_size
+  sku_tier            = var.static_web_app_sku_tier
   tags                = local.common_tags
 
   # 배포는 GitHub Actions에서 진행

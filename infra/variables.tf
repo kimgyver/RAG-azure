@@ -10,6 +10,12 @@ variable "project_name" {
   default     = "ragdemo"
 }
 
+variable "name_suffix" {
+  type        = string
+  description = "Optional fixed suffix (letters/digits) appended to resource names. Leave empty to auto-generate a deterministic suffix from subscription + project_name."
+  default     = ""
+}
+
 variable "app_service_plan_sku" {
   type        = string
   description = "Linux App Service plan SKU when Terraform creates the plan. Default Y1(Consumption) for demo/free-friendly usage. Ignored if existing_linux_service_plan_resource_id is set."
@@ -90,4 +96,26 @@ variable "chat_latency_p95_threshold_ms" {
 variable "static_web_app_location" {
   type    = string
   default = "eastus2"
+}
+
+variable "static_web_app_sku_tier" {
+  type        = string
+  description = "Static Web App SKU tier. Free-first by default. If Free quota is exhausted in this subscription, remove unused Free SWAs or temporarily switch to Standard."
+  default     = "Free"
+
+  validation {
+    condition     = contains(["Free", "Standard"], var.static_web_app_sku_tier)
+    error_message = "static_web_app_sku_tier must be either 'Free' or 'Standard'."
+  }
+}
+
+variable "static_web_app_sku_size" {
+  type        = string
+  description = "Static Web App SKU size. Must match tier for current provider behavior."
+  default     = "Free"
+
+  validation {
+    condition     = contains(["Free", "Standard"], var.static_web_app_sku_size)
+    error_message = "static_web_app_sku_size must be either 'Free' or 'Standard'."
+  }
 }

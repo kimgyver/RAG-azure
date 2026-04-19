@@ -4,7 +4,7 @@ locals {
 
 resource "azurerm_monitor_action_group" "chat_ops" {
   count               = local.chat_alerts_enabled ? 1 : 0
-  name                = "${local.slug}-${random_id.suffix.hex}-chat-ag"
+  name                = "${local.slug}-${local.name_suffix}-chat-ag"
   short_name          = "chatops"
   resource_group_name = azurerm_resource_group.main.name
 
@@ -21,7 +21,7 @@ resource "azurerm_monitor_action_group" "chat_ops" {
 
 resource "azurerm_monitor_scheduled_query_rules_alert_v2" "chat_failures" {
   count               = local.chat_alerts_enabled ? 1 : 0
-  name                = "${local.slug}-${random_id.suffix.hex}-chat-fail"
+  name                = "${local.slug}-${local.name_suffix}-chat-fail"
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
   scopes              = [azurerm_application_insights.main.id]
@@ -54,7 +54,7 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "chat_failures" {
 
 resource "azurerm_monitor_scheduled_query_rules_alert_v2" "chat_latency" {
   count               = local.chat_alerts_enabled ? 1 : 0
-  name                = "${local.slug}-${random_id.suffix.hex}-chat-lat"
+  name                = "${local.slug}-${local.name_suffix}-chat-lat"
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
   scopes              = [azurerm_application_insights.main.id]

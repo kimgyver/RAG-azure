@@ -12,11 +12,41 @@ on:
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
-    env:
-      VITE_UPLOAD_API_BASE_URL: https://ragdemo-8e73d3fb-fn.azurewebsites.net/api
-      VITE_API_BASE_URL: https://ragdemo-8e73d3fb-fn.azurewebsites.net/api
     steps:
       - uses: actions/checkout@v4
+      - name: Resolve frontend API base URL
+        shell: bash
+        env:
+          API_BASE_URL_FROM_VAR: ${{ vars.VITE_API_BASE_URL }}
+          AZURE_CREDENTIALS_JSON: ${{ secrets.AZURE_CREDENTIALS }}
+          TF_PROJECT_NAME: ${{ vars.TF_PROJECT_NAME }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "${API_BASE_URL_FROM_VAR:-}" ]; then
+            BASE_URL="${API_BASE_URL_FROM_VAR%/}"
+          elif [ -n "${AZURE_CREDENTIALS_JSON:-}" ]; then
+            SUBSCRIPTION_ID="$(echo "$AZURE_CREDENTIALS_JSON" | jq -r '.subscriptionId // empty')"
+            if [ -z "$SUBSCRIPTION_ID" ]; then
+              echo "::error::AZURE_CREDENTIALS is set but subscriptionId is missing"
+              exit 1
+            fi
+
+            PROJECT_RAW="${TF_PROJECT_NAME:-ragdemo}"
+            SLUG="$(echo "$PROJECT_RAW" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-14)"
+            if [ -z "$SLUG" ]; then
+              SLUG="app"
+            fi
+
+            SUFFIX="$(printf '%s' "${SUBSCRIPTION_ID}:${SLUG}" | md5sum | cut -c1-8)"
+            BASE_URL="https://${SLUG}-${SUFFIX}-fn.azurewebsites.net/api"
+          else
+            echo "::warning::VITE_API_BASE_URL variable and AZURE_CREDENTIALS secret are not set. Frontend will use its default /api base."
+            exit 0
+          fi
+
+          echo "VITE_UPLOAD_API_BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
+          echo "VITE_API_BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
