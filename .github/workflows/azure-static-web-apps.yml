@@ -15,6 +15,7 @@ jobs:
     env:
       TF_PROJECT_NAME: ${{ vars.TF_PROJECT_NAME }}
       TF_NAME_SUFFIX: ${{ vars.TF_NAME_SUFFIX }}
+      AZURE_CREDENTIALS_JSON: ${{ secrets.AZURE_CREDENTIALS }}
     steps:
       - uses: actions/checkout@v4
       - name: Resolve target SWA resource
@@ -22,7 +23,6 @@ jobs:
         env:
           SWA_NAME_FROM_VAR: ${{ vars.AZURE_STATIC_WEB_APP_NAME }}
           SWA_RG_FROM_VAR: ${{ vars.AZURE_STATIC_WEB_APP_RESOURCE_GROUP }}
-          AZURE_CREDENTIALS_JSON: ${{ secrets.AZURE_CREDENTIALS }}
         run: |
           set -euo pipefail
 
@@ -66,16 +66,26 @@ jobs:
 
           echo "SWA_NAME=$SWA_NAME" >> "$GITHUB_ENV"
           echo "SWA_RG=$SWA_RG" >> "$GITHUB_ENV"
+          if [ -n "${AZURE_CREDENTIALS_JSON:-}" ]; then
+            echo "HAS_AZURE_CREDENTIALS=true" >> "$GITHUB_ENV"
+          else
+            echo "HAS_AZURE_CREDENTIALS=false" >> "$GITHUB_ENV"
+          fi
       - name: Azure login (for SWA token sync)
-        if: ${{ secrets.AZURE_CREDENTIALS != '' }}
+        if: ${{ env.HAS_AZURE_CREDENTIALS == 'true' }}
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          creds: ${{ env.AZURE_CREDENTIALS_JSON }}
       - name: Resolve SWA deployment token from Azure
-        if: ${{ secrets.AZURE_CREDENTIALS != '' && env.SWA_NAME != '' && env.SWA_RG != '' }}
+        if: ${{ env.HAS_AZURE_CREDENTIALS == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
+
+          if [ -z "${SWA_NAME:-}" ] || [ -z "${SWA_RG:-}" ]; then
+            echo "Skipping SWA token sync: SWA_NAME or SWA_RG is empty"
+            exit 0
+          fi
 
           if ! az staticwebapp show --name "$SWA_NAME" --resource-group "$SWA_RG" >/dev/null 2>&1; then
             echo "::error::Static Web App not found: name=$SWA_NAME resourceGroup=$SWA_RG"
@@ -94,7 +104,6 @@ jobs:
         shell: bash
         env:
           API_BASE_URL_FROM_VAR: ${{ vars.VITE_API_BASE_URL }}
-          AZURE_CREDENTIALS_JSON: ${{ secrets.AZURE_CREDENTIALS }}
           TF_PROJECT_NAME: ${{ vars.TF_PROJECT_NAME }}
         run: |
           set -euo pipefail
