@@ -12,8 +12,84 @@ on:
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
+    env:
+      TF_PROJECT_NAME: ${{ vars.TF_PROJECT_NAME }}
+      TF_NAME_SUFFIX: ${{ vars.TF_NAME_SUFFIX }}
     steps:
       - uses: actions/checkout@v4
+      - name: Resolve target SWA resource
+        shell: bash
+        env:
+          SWA_NAME_FROM_VAR: ${{ vars.AZURE_STATIC_WEB_APP_NAME }}
+          SWA_RG_FROM_VAR: ${{ vars.AZURE_STATIC_WEB_APP_RESOURCE_GROUP }}
+          AZURE_CREDENTIALS_JSON: ${{ secrets.AZURE_CREDENTIALS }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "${SWA_NAME_FROM_VAR:-}" ]; then
+            SWA_NAME="$SWA_NAME_FROM_VAR"
+          else
+            PROJECT_RAW="${TF_PROJECT_NAME:-ragdemo}"
+            SLUG="$(echo "$PROJECT_RAW" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-14)"
+            if [ -z "$SLUG" ]; then
+              SLUG="app"
+            fi
+
+            if [ -n "${TF_NAME_SUFFIX:-}" ]; then
+              NAME_SUFFIX="$(echo "$TF_NAME_SUFFIX" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-8)"
+            elif [ -n "${AZURE_CREDENTIALS_JSON:-}" ]; then
+              SUBSCRIPTION_ID="$(echo "$AZURE_CREDENTIALS_JSON" | jq -r '.subscriptionId // empty')"
+              if [ -z "$SUBSCRIPTION_ID" ]; then
+                echo "::error::AZURE_CREDENTIALS is set but subscriptionId is missing"
+                exit 1
+              fi
+              NAME_SUFFIX="$(printf '%s' "${SUBSCRIPTION_ID}:${SLUG}" | md5sum | cut -c1-8)"
+            else
+              echo "::warning::Cannot derive SWA name automatically because AZURE_CREDENTIALS is missing. Set repository variable AZURE_STATIC_WEB_APP_NAME."
+              NAME_SUFFIX=""
+            fi
+
+            if [ -n "$NAME_SUFFIX" ]; then
+              SWA_NAME="${SLUG}-${NAME_SUFFIX}-swa"
+            else
+              SWA_NAME=""
+            fi
+          fi
+
+          if [ -n "${SWA_RG_FROM_VAR:-}" ]; then
+            SWA_RG="$SWA_RG_FROM_VAR"
+          elif [ -n "${SWA_NAME:-}" ]; then
+            SWA_RG="${SWA_NAME%-swa}rg"
+          else
+            SWA_RG=""
+          fi
+
+          echo "SWA_NAME=$SWA_NAME" >> "$GITHUB_ENV"
+          echo "SWA_RG=$SWA_RG" >> "$GITHUB_ENV"
+      - name: Azure login (for SWA token sync)
+        if: ${{ secrets.AZURE_CREDENTIALS != '' }}
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Resolve SWA deployment token from Azure
+        if: ${{ secrets.AZURE_CREDENTIALS != '' && env.SWA_NAME != '' && env.SWA_RG != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! az staticwebapp show --name "$SWA_NAME" --resource-group "$SWA_RG" >/dev/null 2>&1; then
+            echo "::error::Static Web App not found: name=$SWA_NAME resourceGroup=$SWA_RG"
+            echo "Set repository variables AZURE_STATIC_WEB_APP_NAME and AZURE_STATIC_WEB_APP_RESOURCE_GROUP to the actual target app."
+            exit 1
+          fi
+
+          SWA_DEPLOYMENT_TOKEN="$(az staticwebapp secrets list --name "$SWA_NAME" --resource-group "$SWA_RG" --query properties.apiKey -o tsv)"
+          if [ -z "$SWA_DEPLOYMENT_TOKEN" ]; then
+            echo "::error::Failed to read SWA deployment token from Azure for $SWA_NAME"
+            exit 1
+          fi
+
+          echo "SWA_DEPLOYMENT_TOKEN=$SWA_DEPLOYMENT_TOKEN" >> "$GITHUB_ENV"
       - name: Resolve frontend API base URL
         shell: bash
         env:
@@ -47,6 +123,27 @@ jobs:
 
           echo "VITE_UPLOAD_API_BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
           echo "VITE_API_BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
+      - name: Validate deploy token source
+        shell: bash
+        env:
+          SECRET_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "${SWA_DEPLOYMENT_TOKEN:-}" ]; then
+            echo "Using deployment token resolved from Azure for $SWA_NAME"
+            exit 0
+          fi
+
+          if [ -n "${SECRET_TOKEN:-}" ]; then
+            echo "Using repository secret AZURE_STATIC_WEB_APPS_API_TOKEN"
+            echo "If deployment fails with 'No matching Static Web App', refresh this secret from the target SWA Deployment Token."
+            exit 0
+          fi
+
+          echo "::error::No deployment token available."
+          echo "Provide AZURE_CREDENTIALS to auto-resolve token, or set AZURE_STATIC_WEB_APPS_API_TOKEN secret manually."
+          exit 1
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -58,7 +155,7 @@ jobs:
       - name: Deploy to Azure Static Web Apps
         uses: Azure/static-web-apps-deploy@v1
         with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          azure_static_web_apps_api_token: ${{ env.SWA_DEPLOYMENT_TOKEN || secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "upload"
           app_location: "frontend"
