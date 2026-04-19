@@ -6,3 +6,5 @@ import "./functions/chat.js";
 import "./functions/getRuntimeConfig.js";
 import "./functions/listDocumentCatalog.js";
 import "./functions/purgeDocument.js";
+import "./functions/createTextKnowledge.js";
+import "./functions/getDocumentSource.js";

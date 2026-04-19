@@ -27,6 +27,8 @@ export type CatalogDocumentRow = {
     updatedAt: string;
     chunkCount?: number;
     contentType?: string;
+    sourceType?: string;
+    hasSourceText?: boolean;
   } | null;
   search: {
     chunkCount: number;
@@ -78,8 +80,7 @@ async function listDocumentCatalogHandler(
     const byId = new Map<string, CatalogDocumentRow>();
 
     for (const c of cosmosDocs) {
-      const fileName =
-        c.blobName?.split("/").pop() ?? c.documentId;
+      const fileName = c.blobName?.split("/").pop() ?? c.documentId;
       byId.set(c.documentId, {
         documentId: c.documentId,
         tenantId: c.tenantId,
@@ -89,7 +90,9 @@ async function listDocumentCatalogHandler(
           status: c.status,
           updatedAt: c.updatedAt,
           chunkCount: c.chunkCount,
-          contentType: c.contentType
+          contentType: c.contentType,
+          sourceType: c.sourceType,
+          hasSourceText: Boolean(c.sourceText && c.sourceText.trim())
         },
         search: null
       });

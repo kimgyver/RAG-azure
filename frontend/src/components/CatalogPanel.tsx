@@ -1,4 +1,7 @@
+import { useState } from "react";
+import { createPortal } from "react-dom";
 import type { CatalogDocumentRow, RuntimeConfigSnapshot } from "../types/app";
+import type { DocumentSourceResponse } from "../types/app";
 
 type CatalogPanelProps = {
   loadCatalog: () => Promise<void>;
@@ -9,6 +12,7 @@ type CatalogPanelProps = {
   catalogRows: CatalogDocumentRow[];
   purgeBusyId: string | null;
   onPurgeDocument: (documentId: string) => Promise<void>;
+  onViewDocumentSource: (documentId: string) => Promise<DocumentSourceResponse>;
 };
 
 export function CatalogPanel({
@@ -19,8 +23,26 @@ export function CatalogPanel({
   runtimeConfig,
   catalogRows,
   purgeBusyId,
-  onPurgeDocument
+  onPurgeDocument,
+  onViewDocumentSource
 }: CatalogPanelProps) {
+  const [sourceLoadingId, setSourceLoadingId] = useState<string | null>(null);
+  const [sourceView, setSourceView] = useState<DocumentSourceResponse | null>(
+    null
+  );
+
+  const handleViewSource = async (documentId: string) => {
+    setSourceLoadingId(documentId);
+    try {
+      const payload = await onViewDocumentSource(documentId);
+      setSourceView(payload);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "원문 조회 실패");
+    } finally {
+      setSourceLoadingId(null);
+    }
+  };
+
   return (
     <section className="panel catalog-panel" aria-labelledby="catalog-heading">
       <div className="panel-header">
@@ -58,13 +80,14 @@ export function CatalogPanel({
               <th scope="col">File</th>
               <th scope="col">Cosmos</th>
               <th scope="col">Search chunks</th>
+              <th scope="col">원문</th>
               <th scope="col">Delete</th>
             </tr>
           </thead>
           <tbody>
             {catalogRows.length === 0 && catalogStatus === "ok" ? (
               <tr>
-                <td colSpan={5} className="catalog-empty">
+                <td colSpan={6} className="catalog-empty">
                   No documents for this tenant. Upload files or switch tenant.
                 </td>
               </tr>
@@ -99,6 +122,20 @@ export function CatalogPanel({
                 <td>
                   <button
                     type="button"
+                    className="btn-secondary"
+                    disabled={
+                      !row.cosmos?.hasSourceText || sourceLoadingId !== null
+                    }
+                    onClick={() => void handleViewSource(row.documentId)}
+                  >
+                    {sourceLoadingId === row.documentId
+                      ? "Loading…"
+                      : "원문 보기"}
+                  </button>
+                </td>
+                <td>
+                  <button
+                    type="button"
                     className="btn-danger"
                     disabled={
                       purgeBusyId !== null || (!row.cosmos && !row.search)
@@ -119,6 +156,47 @@ export function CatalogPanel({
         Purge removes AI Search chunks and Cosmos metadata only. Blobs in
         storage are not deleted.
       </p>
+
+      {sourceView
+        ? createPortal(
+            <div
+              className="source-modal-backdrop"
+              role="dialog"
+              aria-modal="true"
+              onClick={() => {
+                setSourceView(null);
+              }}
+            >
+              <div
+                className="source-modal"
+                onClick={event => {
+                  event.stopPropagation();
+                }}
+              >
+                <div className="source-modal-header">
+                  <h3>원문 보기</h3>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => {
+                      setSourceView(null);
+                    }}
+                  >
+                    닫기
+                  </button>
+                </div>
+                <p className="catalog-meta">
+                  {sourceView.fileName} · {sourceView.sourceType} · updated{" "}
+                  {sourceView.updatedAt.slice(0, 19)}
+                </p>
+                <pre className="source-modal-content">
+                  {sourceView.sourceText}
+                </pre>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </section>
   );
 }

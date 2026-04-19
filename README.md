@@ -52,6 +52,21 @@ npm run start
 
 상세 환경 변수와 단계별 구현 상태는 [docs/development.md](./docs/development.md)를 본다.
 
+### 화면에서 텍스트를 바로 지식베이스에 등록
+
+업로드 패널 하단의 **Register text knowledge** 영역에서 다음을 수행할 수 있다.
+
+1. `Title (optional)` 입력
+2. `Text to index` 에 텍스트 붙여넣기
+3. `Register text` 클릭
+
+그러면 프론트가 `POST /api/knowledge/text`(개발 시 프록시 기준)로 요청하고, 백엔드가 텍스트를 청킹/임베딩 후 Search 인덱스(활성화된 경우)에 바로 반영한다.
+
+관련 제약:
+
+- `tenantId` allowlist 정책을 동일하게 적용
+- `TEXT_KNOWLEDGE_MAX_CHARS`(기본 120000) 초과 시 400 에러
+
 ### Azure에 올릴 때 (한 줄 요약)
 
 1. `infra`와 `backend/functions-ingestion` 변경은 `Infra + Functions Deploy` 워크플로가 처리( Terraform apply + Functions publish ).

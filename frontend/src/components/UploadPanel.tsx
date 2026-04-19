@@ -1,5 +1,10 @@
 import type { ChangeEvent } from "react";
-import { statusLabel, type DocumentItem, type UploadState } from "../types/app";
+import {
+  statusLabel,
+  type DocumentItem,
+  type TextIngestState,
+  type UploadState
+} from "../types/app";
 
 type UploadPanelProps = {
   onFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
@@ -9,6 +14,13 @@ type UploadPanelProps = {
   effectiveTenantId: string;
   uploadApiBaseUrl: string;
   documents: DocumentItem[];
+  textTitle: string;
+  textContent: string;
+  textIngestState: TextIngestState;
+  textIngestMessage: string;
+  onTextTitleChange: (value: string) => void;
+  onTextContentChange: (value: string) => void;
+  onRegisterTextKnowledge: () => void;
 };
 
 export function UploadPanel({
@@ -18,7 +30,14 @@ export function UploadPanel({
   uploadMessage,
   effectiveTenantId,
   uploadApiBaseUrl,
-  documents
+  documents,
+  textTitle,
+  textContent,
+  textIngestState,
+  textIngestMessage,
+  onTextTitleChange,
+  onTextContentChange,
+  onRegisterTextKnowledge
 }: UploadPanelProps) {
   return (
     <section className="panel panel-upload">
@@ -78,6 +97,54 @@ export function UploadPanel({
             </li>
           ))}
         </ul>
+      </div>
+
+      <div className="text-kb-card">
+        <div className="timeline-header">
+          <h3>Register text knowledge</h3>
+          <span>Direct input</span>
+        </div>
+
+        <label className="text-kb-label" htmlFor="text-kb-title">
+          Title (optional)
+        </label>
+        <input
+          id="text-kb-title"
+          className="text-kb-title"
+          value={textTitle}
+          onChange={event => {
+            onTextTitleChange(event.target.value);
+          }}
+          placeholder="example: onboarding-notes"
+        />
+
+        <label className="text-kb-label" htmlFor="text-kb-content">
+          Text to index
+        </label>
+        <textarea
+          id="text-kb-content"
+          className="text-kb-input"
+          value={textContent}
+          onChange={event => {
+            onTextContentChange(event.target.value);
+          }}
+          placeholder="Paste or type the text you want searchable in this tenant knowledge base."
+        />
+
+        <div className="upload-actions text-kb-actions">
+          <button
+            type="button"
+            disabled={textIngestState === "submitting"}
+            onClick={onRegisterTextKnowledge}
+          >
+            {textIngestState === "submitting"
+              ? "Registering..."
+              : "Register text"}
+          </button>
+          <p className={`upload-hint upload-${textIngestState}`}>
+            {textIngestMessage}
+          </p>
+        </div>
       </div>
     </section>
   );

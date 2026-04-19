@@ -112,6 +112,10 @@ async function processQueuedDocumentHandler(queueEntry, context) {
             chunkSize: Number.isFinite(chunkSize) ? chunkSize : 1200,
             overlap: Number.isFinite(chunkOverlap) ? chunkOverlap : 200
         });
+        const sourceTextMaxChars = Number(process.env.SOURCE_TEXT_MAX_CHARS ?? "120000");
+        const sourceText = Number.isFinite(sourceTextMaxChars) && sourceTextMaxChars > 0
+            ? text.slice(0, sourceTextMaxChars)
+            : text;
         let embeddings = chunks.map(() => null);
         if (embeddingEnabled()) {
             embeddings = await generateEmbeddings(chunks.map(c => c.content));
@@ -140,7 +144,9 @@ async function processQueuedDocumentHandler(queueEntry, context) {
                 status: indexed ? "indexed" : "chunked",
                 contentType,
                 contentLength: text.length,
-                chunkCount: chunks.length
+                chunkCount: chunks.length,
+                sourceType: extracted.sourceType,
+                sourceText
             }, context);
         }
         context.log("Step 6 chunking completed.", {

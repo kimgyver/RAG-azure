@@ -54,12 +54,25 @@ export type UploadState =
   | "done"
   | "error";
 
+export type TextIngestState = "idle" | "submitting" | "done" | "error";
+
 export type CreateUploadResponse = {
   documentId: string;
   tenantId: string;
   blobName: string;
   uploadUrl: string;
   expiresInMinutes: number;
+};
+
+export type CreateTextKnowledgeResponse = {
+  documentId: string;
+  tenantId: string;
+  blobName: string;
+  fileName: string;
+  contentLength: number;
+  chunkCount: number;
+  indexed: boolean;
+  status: "chunked" | "indexed";
 };
 
 export type DocumentStatusResponse = {
@@ -91,6 +104,8 @@ export type CatalogCosmos = {
   updatedAt: string;
   chunkCount?: number;
   contentType?: string;
+  sourceType?: string;
+  hasSourceText?: boolean;
 };
 
 export type CatalogSearch = {
@@ -112,6 +127,15 @@ export type CatalogResponse = {
   tenantId: string;
   documents: CatalogDocumentRow[];
   sources: { cosmos: boolean; search: boolean };
+};
+
+export type DocumentSourceResponse = {
+  documentId: string;
+  tenantId: string;
+  fileName: string;
+  sourceType: string;
+  sourceText: string;
+  updatedAt: string;
 };
 
 export type PurgeResponse = {

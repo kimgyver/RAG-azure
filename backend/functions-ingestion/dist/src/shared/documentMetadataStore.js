@@ -53,10 +53,12 @@ export async function upsertDocumentMetadata(update, context) {
             tenantId: update.tenantId,
             blobName: update.blobName,
             status: update.status,
-            contentType: update.contentType,
-            contentLength: update.contentLength,
-            chunkCount: update.chunkCount,
-            errorMessage: update.errorMessage,
+            contentType: update.contentType ?? existing?.contentType,
+            contentLength: update.contentLength ?? existing?.contentLength,
+            chunkCount: update.chunkCount ?? existing?.chunkCount,
+            errorMessage: update.errorMessage ?? existing?.errorMessage,
+            sourceType: update.sourceType ?? existing?.sourceType,
+            sourceText: update.sourceText ?? existing?.sourceText,
             createdAt: existing?.createdAt ?? now,
             updatedAt: now
         };

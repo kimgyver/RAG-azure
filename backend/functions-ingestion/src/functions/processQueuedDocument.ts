@@ -124,10 +124,13 @@ async function processQueuedDocumentHandler(
         );
       }
 
-      context.log("Skipping unsupported blob (no text/PDF layer or OCR text).", {
-        blobName,
-        contentType
-      });
+      context.log(
+        "Skipping unsupported blob (no text/PDF layer or OCR text).",
+        {
+          blobName,
+          contentType
+        }
+      );
       return;
     }
 
@@ -159,6 +162,14 @@ async function processQueuedDocumentHandler(
       chunkSize: Number.isFinite(chunkSize) ? chunkSize : 1200,
       overlap: Number.isFinite(chunkOverlap) ? chunkOverlap : 200
     });
+
+    const sourceTextMaxChars = Number(
+      process.env.SOURCE_TEXT_MAX_CHARS ?? "120000"
+    );
+    const sourceText =
+      Number.isFinite(sourceTextMaxChars) && sourceTextMaxChars > 0
+        ? text.slice(0, sourceTextMaxChars)
+        : text;
 
     let embeddings: (number[] | null)[] = chunks.map(() => null);
     if (embeddingEnabled()) {
@@ -193,7 +204,9 @@ async function processQueuedDocumentHandler(
           status: indexed ? "indexed" : "chunked",
           contentType,
           contentLength: text.length,
-          chunkCount: chunks.length
+          chunkCount: chunks.length,
+          sourceType: extracted.sourceType,
+          sourceText
         },
         context
       );

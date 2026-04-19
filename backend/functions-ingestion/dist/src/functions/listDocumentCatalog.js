@@ -44,7 +44,9 @@ async function listDocumentCatalogHandler(request, context) {
                     status: c.status,
                     updatedAt: c.updatedAt,
                     chunkCount: c.chunkCount,
-                    contentType: c.contentType
+                    contentType: c.contentType,
+                    sourceType: c.sourceType,
+                    hasSourceText: Boolean(c.sourceText && c.sourceText.trim())
                 },
                 search: null
             });

@@ -10,12 +10,15 @@ import {
   type CatalogResponse,
   type ChatMessage,
   type ChatResponse,
+  type CreateTextKnowledgeResponse,
   type CreateUploadResponse,
   type DocumentItem,
+  type DocumentSourceResponse,
   type DocumentStatus,
   type DocumentStatusResponse,
   type PurgeResponse,
   type RuntimeConfigSnapshot,
+  type TextIngestState,
   type UploadState
 } from "./types/app";
 import {
@@ -46,6 +49,13 @@ function App() {
   const [uploadState, setUploadState] = useState<UploadState>("idle");
   const [uploadMessage, setUploadMessage] = useState<string>(
     "Choose a file and start upload."
+  );
+  const [textTitle, setTextTitle] = useState<string>("");
+  const [textContent, setTextContent] = useState<string>("");
+  const [textIngestState, setTextIngestState] =
+    useState<TextIngestState>("idle");
+  const [textIngestMessage, setTextIngestMessage] = useState<string>(
+    "Type or paste text, then register it for retrieval."
   );
   const [trackedDocument, setTrackedDocument] = useState<{
     documentId: string;
@@ -540,6 +550,100 @@ function App() {
     }
   };
 
+  const registerTextKnowledge = async () => {
+    const content = textContent.trim();
+    if (!content) {
+      setTextIngestState("error");
+      setTextIngestMessage("Please enter text content first.");
+      return;
+    }
+
+    const tempId = `text-temp-${Date.now()}`;
+    const displayTitle = textTitle.trim() || "manual-note.txt";
+
+    setDocuments(prev => [
+      {
+        id: tempId,
+        fileName: displayTitle,
+        status: "processing",
+        updatedAt: "just now",
+        tenantId: effectiveTenantId
+      },
+      ...prev
+    ]);
+
+    try {
+      setTextIngestState("submitting");
+      setTextIngestMessage("Registering text and creating chunks...");
+
+      const response = await fetch(`${uploadApiBaseUrl}/knowledge/text`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(uploadApiKey ? { "x-functions-key": uploadApiKey } : {})
+        },
+        body: JSON.stringify({
+          tenantId: effectiveTenantId,
+          title: textTitle.trim() || undefined,
+          text: content
+        })
+      });
+
+      const responseText = await response.text();
+      if (!response.ok) {
+        const detail = extractApiMessage(
+          responseText,
+          `HTTP ${response.status}`
+        );
+        throw new Error(detail);
+      }
+
+      const payload = JSON.parse(responseText) as CreateTextKnowledgeResponse;
+
+      setDocuments(prev =>
+        prev.map(item =>
+          item.id === tempId
+            ? {
+                ...item,
+                id: payload.documentId,
+                fileName: payload.fileName,
+                tenantId: payload.tenantId,
+                status: payload.status,
+                updatedAt: "just now",
+                contentLength: payload.contentLength,
+                chunkCount: payload.chunkCount
+              }
+            : item
+        )
+      );
+
+      setTextIngestState("done");
+      setTextIngestMessage(
+        payload.indexed
+          ? `Registered ${payload.chunkCount} chunk(s) to knowledge base.`
+          : `Text chunked (${payload.chunkCount}) but search indexing is disabled.`
+      );
+      setTextTitle("");
+      setTextContent("");
+      setTenantError("");
+      await refreshCatalogWithRetries(2, 350);
+    } catch (error) {
+      setDocuments(prev =>
+        prev.map(item =>
+          item.id === tempId ? { ...item, status: "failed" } : item
+        )
+      );
+
+      const message =
+        error instanceof Error ? error.message : "Text registration failed.";
+      if (message.includes("tenantId is not allowed")) {
+        setTenantError("tenantId is not allowed for this deployment.");
+      }
+      setTextIngestState("error");
+      setTextIngestMessage(message);
+    }
+  };
+
   const handlePurgeDocument = async (documentId: string) => {
     const confirmed = window.confirm(
       `Document ID "${documentId}"\n\nThis removes AI Search chunks and Cosmos metadata for this tenant. The blob in storage is left unchanged. Continue?`
@@ -587,6 +691,29 @@ function App() {
     }
   };
 
+  const handleViewDocumentSource = async (
+    documentId: string
+  ): Promise<DocumentSourceResponse> => {
+    const response = await fetch(
+      `${uploadApiBaseUrl}/documents/${encodeURIComponent(
+        documentId
+      )}/source?tenantId=${encodeURIComponent(effectiveTenantId)}`,
+      {
+        headers: {
+          ...(uploadApiKey ? { "x-functions-key": uploadApiKey } : {})
+        }
+      }
+    );
+
+    const text = await response.text();
+    if (!response.ok) {
+      const detail = extractApiMessage(text, `HTTP ${response.status}`);
+      throw new Error(detail);
+    }
+
+    return JSON.parse(text) as DocumentSourceResponse;
+  };
+
   return (
     <div className="app-shell">
       <HeroHeader
@@ -619,6 +746,13 @@ function App() {
             effectiveTenantId={effectiveTenantId}
             uploadApiBaseUrl={uploadApiBaseUrl}
             documents={documents}
+            textTitle={textTitle}
+            textContent={textContent}
+            textIngestState={textIngestState}
+            textIngestMessage={textIngestMessage}
+            onTextTitleChange={setTextTitle}
+            onTextContentChange={setTextContent}
+            onRegisterTextKnowledge={registerTextKnowledge}
           />
 
           <ChatPanel
@@ -642,6 +776,7 @@ function App() {
           catalogRows={catalogRows}
           purgeBusyId={purgeBusyId}
           onPurgeDocument={handlePurgeDocument}
+          onViewDocumentSource={handleViewDocumentSource}
         />
       </main>
     </div>
