@@ -59,7 +59,7 @@ jobs:
           if [ -n "${SWA_RG_FROM_VAR:-}" ]; then
             SWA_RG="$SWA_RG_FROM_VAR"
           elif [ -n "${SWA_NAME:-}" ]; then
-            SWA_RG="${SWA_NAME%-swa}rg"
+            SWA_RG="${SWA_NAME%-swa}-rg"
           else
             SWA_RG=""
           fi
@@ -79,6 +79,9 @@ jobs:
       - name: Resolve SWA deployment token from Azure
         if: ${{ env.HAS_AZURE_CREDENTIALS == 'true' }}
         shell: bash
+        env:
+          SWA_NAME_FROM_VAR: ${{ vars.AZURE_STATIC_WEB_APP_NAME }}
+          SWA_RG_FROM_VAR: ${{ vars.AZURE_STATIC_WEB_APP_RESOURCE_GROUP }}
         run: |
           set -euo pipefail
 
@@ -88,9 +91,28 @@ jobs:
           fi
 
           if ! az staticwebapp show --name "$SWA_NAME" --resource-group "$SWA_RG" >/dev/null 2>&1; then
-            echo "::error::Static Web App not found: name=$SWA_NAME resourceGroup=$SWA_RG"
-            echo "Set repository variables AZURE_STATIC_WEB_APP_NAME and AZURE_STATIC_WEB_APP_RESOURCE_GROUP to the actual target app."
-            exit 1
+            echo "Static Web App not found with computed target: name=$SWA_NAME resourceGroup=$SWA_RG"
+
+            if [ -n "${SWA_NAME_FROM_VAR:-}" ] || [ -n "${SWA_RG_FROM_VAR:-}" ]; then
+              echo "::error::Repository variable target does not exist."
+              echo "AZURE_STATIC_WEB_APP_NAME=${SWA_NAME_FROM_VAR:-<empty>}"
+              echo "AZURE_STATIC_WEB_APP_RESOURCE_GROUP=${SWA_RG_FROM_VAR:-<empty>}"
+              exit 1
+            fi
+
+            SWA_COUNT="$(az staticwebapp list --query 'length(@)' -o tsv)"
+            if [ "$SWA_COUNT" = "1" ]; then
+              SWA_NAME="$(az staticwebapp list --query '[0].name' -o tsv)"
+              SWA_RG="$(az staticwebapp list --query '[0].resourceGroup' -o tsv)"
+              echo "Auto-selected the only SWA in subscription: name=$SWA_NAME resourceGroup=$SWA_RG"
+              echo "SWA_NAME=$SWA_NAME" >> "$GITHUB_ENV"
+              echo "SWA_RG=$SWA_RG" >> "$GITHUB_ENV"
+            else
+              echo "::error::Could not auto-resolve target SWA (found $SWA_COUNT SWA resources)."
+              echo "Set repository variables AZURE_STATIC_WEB_APP_NAME and AZURE_STATIC_WEB_APP_RESOURCE_GROUP."
+              az staticwebapp list --query '[].{name:name,resourceGroup:resourceGroup,location:location}' -o table
+              exit 1
+            fi
           fi
 
           SWA_DEPLOYMENT_TOKEN="$(az staticwebapp secrets list --name "$SWA_NAME" --resource-group "$SWA_RG" --query properties.apiKey -o tsv)"
