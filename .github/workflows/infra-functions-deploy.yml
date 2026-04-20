@@ -33,6 +33,7 @@ jobs:
       TF_VAR_app_service_plan_sku: "Y1"
       TF_VAR_project_name: ${{ vars.TF_PROJECT_NAME || 'ragapp' }}
       TF_VAR_name_suffix: ${{ vars.TF_NAME_SUFFIX }}
+      TF_VAR_allowed_tenant_ids: ${{ vars.ALLOWED_TENANT_IDS_JSON || '["tenant-a","tenant-b"]' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -88,6 +89,8 @@ jobs:
           SEARCH_API_KEY_FROM_SECRET: ${{ secrets.SEARCH_API_KEY }}
           COSMOS_ENDPOINT_FROM_VAR: ${{ vars.COSMOS_ENDPOINT }}
           COSMOS_KEY_FROM_SECRET: ${{ secrets.COSMOS_KEY }}
+          OPENAI_API_KEY_FROM_SECRET: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL_FROM_VAR: ${{ vars.OPENAI_MODEL }}
         run: |
           set -euo pipefail
 
@@ -113,6 +116,17 @@ jobs:
               --arg key "$COSMOS_KEY_FROM_SECRET" \
               '$base + {COSMOS_DB_ENABLED:"true", COSMOS_ENDPOINT:$endpoint, COSMOS_KEY:$key}')"
             echo "Prepared COSMOS_* settings for Terraform app_settings merge."
+          fi
+
+          if [ -n "${OPENAI_API_KEY_FROM_SECRET:-}" ]; then
+            echo "::add-mask::${OPENAI_API_KEY_FROM_SECRET}"
+            OPENAI_MODEL_VALUE="${OPENAI_MODEL_FROM_VAR:-gpt-4o-mini}"
+            EXTRA="$(jq -cn \
+              --argjson base "$EXTRA" \
+              --arg key "$OPENAI_API_KEY_FROM_SECRET" \
+              --arg model "$OPENAI_MODEL_VALUE" \
+              '$base + {OPENAI_API_KEY:$key, OPENAI_MODEL:$model}')"
+            echo "Prepared OPENAI_* settings for Terraform app_settings merge."
           fi
 
           if [ "$EXTRA" != "{}" ]; then
