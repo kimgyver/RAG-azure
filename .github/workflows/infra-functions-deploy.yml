@@ -80,6 +80,48 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
+      - name: Resolve optional runtime app settings for Terraform
+        shell: bash
+        env:
+          SEARCH_ENDPOINT_FROM_VAR: ${{ vars.SEARCH_ENDPOINT }}
+          SEARCH_INDEX_NAME_FROM_VAR: ${{ vars.SEARCH_INDEX_NAME }}
+          SEARCH_API_KEY_FROM_SECRET: ${{ secrets.SEARCH_API_KEY }}
+          COSMOS_ENDPOINT_FROM_VAR: ${{ vars.COSMOS_ENDPOINT }}
+          COSMOS_KEY_FROM_SECRET: ${{ secrets.COSMOS_KEY }}
+        run: |
+          set -euo pipefail
+
+          EXTRA='{}'
+
+          if [ -n "${SEARCH_ENDPOINT_FROM_VAR:-}" ] && [ -n "${SEARCH_API_KEY_FROM_SECRET:-}" ]; then
+            echo "::add-mask::${SEARCH_API_KEY_FROM_SECRET}"
+            SEARCH_INDEX_NAME="${SEARCH_INDEX_NAME_FROM_VAR:-rag-chunks}"
+            EXTRA="$(jq -cn \
+              --argjson base "$EXTRA" \
+              --arg endpoint "$SEARCH_ENDPOINT_FROM_VAR" \
+              --arg key "$SEARCH_API_KEY_FROM_SECRET" \
+              --arg index "$SEARCH_INDEX_NAME" \
+              '$base + {SEARCH_ENABLED:"true", SEARCH_ENDPOINT:$endpoint, SEARCH_API_KEY:$key, SEARCH_INDEX_NAME:$index}')"
+            echo "Prepared SEARCH_* settings for Terraform app_settings merge."
+          fi
+
+          if [ -n "${COSMOS_ENDPOINT_FROM_VAR:-}" ] && [ -n "${COSMOS_KEY_FROM_SECRET:-}" ]; then
+            echo "::add-mask::${COSMOS_KEY_FROM_SECRET}"
+            EXTRA="$(jq -cn \
+              --argjson base "$EXTRA" \
+              --arg endpoint "$COSMOS_ENDPOINT_FROM_VAR" \
+              --arg key "$COSMOS_KEY_FROM_SECRET" \
+              '$base + {COSMOS_DB_ENABLED:"true", COSMOS_ENDPOINT:$endpoint, COSMOS_KEY:$key}')"
+            echo "Prepared COSMOS_* settings for Terraform app_settings merge."
+          fi
+
+          if [ "$EXTRA" != "{}" ]; then
+            echo "TF_VAR_extra_app_settings=$EXTRA" >> "$GITHUB_ENV"
+            echo "Injected TF_VAR_extra_app_settings from repository variables/secrets."
+          else
+            echo "No optional Search/Cosmos settings found in repository variables/secrets."
+          fi
+
       - name: Terraform init
         working-directory: ./infra
         run: terraform init -no-color
