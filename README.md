@@ -113,6 +113,6 @@ npm run start
 - **개선**: 길이가 길어져 역할별 탐색이 어려워, 위 문서로 나눔. “무엇을 왜 쓰는가”는 `architecture` / `design-and-scope`, “어떻게 돌리는가”는 `development`·`deployment-azure`에 모음.
 - **중복**: 파이프라인 단계 설명이 아키텍처 문서와 개발 Step에 각각 있음. 전자는 **개념·현재 구현 요약**, 후자는 **작업 순서·명령** 기준으로 유지함.
 
-## Website address
+## Demo website address
 
-https://ambitious-ocean-078950f0f.1.azurestaticapps.net
+https://thankful-desert-09db9540f.7.azurestaticapps.net/
