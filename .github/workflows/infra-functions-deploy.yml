@@ -84,6 +84,39 @@ jobs:
         working-directory: ./infra
         run: terraform init -no-color
 
+      - name: Adopt existing resource group into Terraform state
+        working-directory: ./infra
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
+          PROJECT_RAW="${TF_VAR_project_name:-ragapp}"
+          SLUG="$(echo "$PROJECT_RAW" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-14)"
+          if [ -z "$SLUG" ]; then
+            SLUG="app"
+          fi
+
+          if [ -n "${TF_VAR_name_suffix:-}" ]; then
+            NAME_SUFFIX="$(echo "$TF_VAR_name_suffix" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-8)"
+          else
+            NAME_SUFFIX="$(printf '%s' "${SUBSCRIPTION_ID}:${SLUG}" | md5sum | cut -c1-8)"
+          fi
+
+          RG_NAME="${SLUG}-${NAME_SUFFIX}-rg"
+          RG_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}"
+
+          if az group exists --name "$RG_NAME" | grep -q true; then
+            if terraform state show azurerm_resource_group.main >/dev/null 2>&1; then
+              echo "Resource group already tracked in state: $RG_NAME"
+            else
+              echo "Importing existing resource group into state: $RG_NAME"
+              terraform import azurerm_resource_group.main "$RG_ID"
+            fi
+          else
+            echo "No existing resource group found for import: $RG_NAME"
+          fi
+
       - name: Terraform plan
         working-directory: ./infra
         run: terraform plan -no-color
