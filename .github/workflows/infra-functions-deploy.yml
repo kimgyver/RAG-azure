@@ -138,34 +138,75 @@ jobs:
 
           EXTRA='{}'
 
-          if [ -n "${SEARCH_ENDPOINT_FROM_VAR:-}" ] && [ -n "${SEARCH_API_KEY_FROM_SECRET:-}" ]; then
-            echo "::add-mask::${SEARCH_API_KEY_FROM_SECRET}"
-            SEARCH_INDEX_NAME="${SEARCH_INDEX_NAME_FROM_VAR:-rag-chunks}"
+          SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
+          PROJECT_RAW="${TF_VAR_project_name:-ragapp}"
+          SLUG="$(echo "$PROJECT_RAW" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-14)"
+          if [ -z "$SLUG" ]; then
+            SLUG="app"
+          fi
+
+          if [ -n "${TF_VAR_name_suffix:-}" ]; then
+            NAME_SUFFIX="$(echo "$TF_VAR_name_suffix" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-8)"
+          else
+            NAME_SUFFIX="$(printf '%s' "${SUBSCRIPTION_ID}:${SLUG}" | md5sum | cut -c1-8)"
+          fi
+
+          RG_NAME="${SLUG}-${NAME_SUFFIX}-rg"
+          FUNCTION_APP_NAME="${SLUG}-${NAME_SUFFIX}-fn"
+
+          EXISTING_SETTINGS='[]'
+          if az functionapp show --name "$FUNCTION_APP_NAME" --resource-group "$RG_NAME" >/dev/null 2>&1; then
+            EXISTING_SETTINGS="$(az functionapp config appsettings list --name "$FUNCTION_APP_NAME" --resource-group "$RG_NAME" --query "[?name=='SEARCH_ENDPOINT'||name=='SEARCH_API_KEY'||name=='SEARCH_INDEX_NAME'||name=='COSMOS_ENDPOINT'||name=='COSMOS_KEY'||name=='OPENAI_API_KEY'||name=='OPENAI_MODEL'].[name,value]" -o json)"
+            echo "Using current Function App settings as fallback when repo vars/secrets are missing."
+          fi
+
+          get_existing_setting() {
+            local setting_name="$1"
+            jq -r --arg n "$setting_name" '.[] | select(.[0] == $n) | .[1]' <<<"$EXISTING_SETTINGS" | head -n 1
+          }
+
+          SEARCH_ENDPOINT_VALUE="${SEARCH_ENDPOINT_FROM_VAR:-$(get_existing_setting SEARCH_ENDPOINT)}"
+          SEARCH_API_KEY_VALUE="${SEARCH_API_KEY_FROM_SECRET:-$(get_existing_setting SEARCH_API_KEY)}"
+          SEARCH_INDEX_NAME_VALUE="${SEARCH_INDEX_NAME_FROM_VAR:-$(get_existing_setting SEARCH_INDEX_NAME)}"
+          if [ -z "$SEARCH_INDEX_NAME_VALUE" ]; then
+            SEARCH_INDEX_NAME_VALUE="rag-chunks"
+          fi
+
+          if [ -n "$SEARCH_ENDPOINT_VALUE" ] && [ -n "$SEARCH_API_KEY_VALUE" ]; then
+            echo "::add-mask::${SEARCH_API_KEY_VALUE}"
             EXTRA="$(jq -cn \
               --argjson base "$EXTRA" \
-              --arg endpoint "$SEARCH_ENDPOINT_FROM_VAR" \
-              --arg key "$SEARCH_API_KEY_FROM_SECRET" \
-              --arg index "$SEARCH_INDEX_NAME" \
+              --arg endpoint "$SEARCH_ENDPOINT_VALUE" \
+              --arg key "$SEARCH_API_KEY_VALUE" \
+              --arg index "$SEARCH_INDEX_NAME_VALUE" \
               '$base + {SEARCH_ENABLED:"true", SEARCH_ENDPOINT:$endpoint, SEARCH_API_KEY:$key, SEARCH_INDEX_NAME:$index}')"
             echo "Prepared SEARCH_* settings for Terraform app_settings merge."
           fi
 
-          if [ -n "${COSMOS_ENDPOINT_FROM_VAR:-}" ] && [ -n "${COSMOS_KEY_FROM_SECRET:-}" ]; then
-            echo "::add-mask::${COSMOS_KEY_FROM_SECRET}"
+          COSMOS_ENDPOINT_VALUE="${COSMOS_ENDPOINT_FROM_VAR:-$(get_existing_setting COSMOS_ENDPOINT)}"
+          COSMOS_KEY_VALUE="${COSMOS_KEY_FROM_SECRET:-$(get_existing_setting COSMOS_KEY)}"
+
+          if [ -n "$COSMOS_ENDPOINT_VALUE" ] && [ -n "$COSMOS_KEY_VALUE" ]; then
+            echo "::add-mask::${COSMOS_KEY_VALUE}"
             EXTRA="$(jq -cn \
               --argjson base "$EXTRA" \
-              --arg endpoint "$COSMOS_ENDPOINT_FROM_VAR" \
-              --arg key "$COSMOS_KEY_FROM_SECRET" \
+              --arg endpoint "$COSMOS_ENDPOINT_VALUE" \
+              --arg key "$COSMOS_KEY_VALUE" \
               '$base + {COSMOS_DB_ENABLED:"true", COSMOS_ENDPOINT:$endpoint, COSMOS_KEY:$key}')"
             echo "Prepared COSMOS_* settings for Terraform app_settings merge."
           fi
 
-          if [ -n "${OPENAI_API_KEY_FROM_SECRET:-}" ]; then
-            echo "::add-mask::${OPENAI_API_KEY_FROM_SECRET}"
-            OPENAI_MODEL_VALUE="${OPENAI_MODEL_FROM_VAR:-gpt-4o-mini}"
+          OPENAI_API_KEY_VALUE="${OPENAI_API_KEY_FROM_SECRET:-$(get_existing_setting OPENAI_API_KEY)}"
+          OPENAI_MODEL_VALUE="${OPENAI_MODEL_FROM_VAR:-$(get_existing_setting OPENAI_MODEL)}"
+          if [ -z "$OPENAI_MODEL_VALUE" ]; then
+            OPENAI_MODEL_VALUE="gpt-4o-mini"
+          fi
+
+          if [ -n "$OPENAI_API_KEY_VALUE" ]; then
+            echo "::add-mask::${OPENAI_API_KEY_VALUE}"
             EXTRA="$(jq -cn \
               --argjson base "$EXTRA" \
-              --arg key "$OPENAI_API_KEY_FROM_SECRET" \
+              --arg key "$OPENAI_API_KEY_VALUE" \
               --arg model "$OPENAI_MODEL_VALUE" \
               '$base + {OPENAI_API_KEY:$key, OPENAI_MODEL:$model}')"
             echo "Prepared OPENAI_* settings for Terraform app_settings merge."
