@@ -84,7 +84,7 @@ jobs:
         working-directory: ./infra
         run: terraform init -no-color
 
-      - name: Adopt existing resource group into Terraform state
+      - name: Adopt existing Azure resources into Terraform state
         working-directory: ./infra
         shell: bash
         run: |
@@ -105,16 +105,72 @@ jobs:
 
           RG_NAME="${SLUG}-${NAME_SUFFIX}-rg"
           RG_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}"
+          STORAGE_ACCOUNT_NAME="$(printf '%s' "${SLUG}${NAME_SUFFIX}" | cut -c1-24)"
+          SERVICEBUS_NAMESPACE_NAME="${SLUG}-sb-${NAME_SUFFIX}"
+          APP_INSIGHTS_NAME="${SLUG}-${NAME_SUFFIX}-ai"
+          SWA_NAME="${SLUG}-${NAME_SUFFIX}-swa"
+          FUNCTION_APP_NAME="${SLUG}-${NAME_SUFFIX}-fn"
+          SERVICE_PLAN_NAME="${SLUG}-${NAME_SUFFIX}-asp"
+          QUEUE_NAME="${TF_VAR_servicebus_queue_name:-processing-jobs}"
+          AUTH_RULE_NAME="ingestion-functions"
 
-          if az group exists --name "$RG_NAME" | grep -q true; then
-            if terraform state show azurerm_resource_group.main >/dev/null 2>&1; then
-              echo "Resource group already tracked in state: $RG_NAME"
-            else
-              echo "Importing existing resource group into state: $RG_NAME"
-              terraform import azurerm_resource_group.main "$RG_ID"
+          import_if_needed() {
+            local address="$1"
+            local id="$2"
+
+            if terraform state show "$address" >/dev/null 2>&1; then
+              echo "Already in state: $address"
+              return
             fi
+
+            if az resource show --ids "$id" >/dev/null 2>&1; then
+              echo "Importing into state: $address"
+              terraform import "$address" "$id"
+            else
+              echo "Not found in Azure (skip import): $id"
+            fi
+          }
+
+          import_if_needed "azurerm_resource_group.main" "$RG_ID"
+
+          import_if_needed \
+            "azurerm_storage_account.main" \
+            "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.Storage/storageAccounts/${STORAGE_ACCOUNT_NAME}"
+
+          import_if_needed \
+            "azurerm_storage_container.uploads" \
+            "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.Storage/storageAccounts/${STORAGE_ACCOUNT_NAME}/blobServices/default/containers/uploads"
+
+          import_if_needed \
+            "azurerm_servicebus_namespace.main" \
+            "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.ServiceBus/namespaces/${SERVICEBUS_NAMESPACE_NAME}"
+
+          import_if_needed \
+            "azurerm_servicebus_queue.processing" \
+            "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.ServiceBus/namespaces/${SERVICEBUS_NAMESPACE_NAME}/queues/${QUEUE_NAME}"
+
+          import_if_needed \
+            "azurerm_servicebus_namespace_authorization_rule.functions" \
+            "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.ServiceBus/namespaces/${SERVICEBUS_NAMESPACE_NAME}/AuthorizationRules/${AUTH_RULE_NAME}"
+
+          import_if_needed \
+            "azurerm_application_insights.main" \
+            "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.Insights/components/${APP_INSIGHTS_NAME}"
+
+          import_if_needed \
+            "azurerm_static_web_app.frontend" \
+            "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.Web/staticSites/${SWA_NAME}"
+
+          import_if_needed \
+            "azurerm_linux_function_app.ingestion" \
+            "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.Web/sites/${FUNCTION_APP_NAME}"
+
+          if [ -z "${TF_VAR_existing_linux_service_plan_resource_id:-}" ]; then
+            import_if_needed \
+              "azurerm_service_plan.functions[0]" \
+              "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.Web/serverfarms/${SERVICE_PLAN_NAME}"
           else
-            echo "No existing resource group found for import: $RG_NAME"
+            echo "Skipping azurerm_service_plan.functions[0] import (using existing Linux plan)."
           fi
 
       - name: Terraform plan
