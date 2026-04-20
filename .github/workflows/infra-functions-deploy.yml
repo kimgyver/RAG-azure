@@ -151,7 +151,7 @@ jobs:
 
           import_if_needed \
             "azurerm_servicebus_namespace_authorization_rule.functions" \
-            "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.ServiceBus/namespaces/${SERVICEBUS_NAMESPACE_NAME}/AuthorizationRules/${AUTH_RULE_NAME}"
+            "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.ServiceBus/namespaces/${SERVICEBUS_NAMESPACE_NAME}/authorizationRules/${AUTH_RULE_NAME}"
 
           import_if_needed \
             "azurerm_application_insights.main" \
