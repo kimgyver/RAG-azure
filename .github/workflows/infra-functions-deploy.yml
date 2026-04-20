@@ -55,6 +55,48 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Resolve Static Web App origin for Terraform CORS
+        shell: bash
+        env:
+          SWA_ORIGIN_FROM_VAR: ${{ vars.STATIC_WEB_APP_ORIGIN }}
+        run: |
+          set -euo pipefail
+
+          ORIGIN="${SWA_ORIGIN_FROM_VAR:-}"
+          ORIGIN="${ORIGIN%/}"
+
+          if [ -z "$ORIGIN" ]; then
+            SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
+            PROJECT_RAW="${TF_VAR_project_name:-ragapp}"
+            SLUG="$(echo "$PROJECT_RAW" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-14)"
+            if [ -z "$SLUG" ]; then
+              SLUG="app"
+            fi
+
+            if [ -n "${TF_VAR_name_suffix:-}" ]; then
+              NAME_SUFFIX="$(echo "$TF_VAR_name_suffix" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-8)"
+            else
+              NAME_SUFFIX="$(printf '%s' "${SUBSCRIPTION_ID}:${SLUG}" | md5sum | cut -c1-8)"
+            fi
+
+            SWA_NAME="${SLUG}-${NAME_SUFFIX}-swa"
+            SWA_RG="${SLUG}-${NAME_SUFFIX}-rg"
+
+            if az staticwebapp show --name "$SWA_NAME" --resource-group "$SWA_RG" >/dev/null 2>&1; then
+              HOSTNAME="$(az staticwebapp show --name "$SWA_NAME" --resource-group "$SWA_RG" --query defaultHostname -o tsv)"
+              if [ -n "$HOSTNAME" ]; then
+                ORIGIN="https://$HOSTNAME"
+              fi
+            fi
+          fi
+
+          if [ -n "$ORIGIN" ]; then
+            echo "TF_VAR_static_web_app_origin=$ORIGIN" >> "$GITHUB_ENV"
+            echo "Resolved static web app origin for CORS: $ORIGIN"
+          else
+            echo "::warning::Could not resolve static web app origin. Set repository variable STATIC_WEB_APP_ORIGIN to keep Function/Blob CORS aligned."
+          fi
+
       - name: Resolve Linux App Service plan for quota-limited subscriptions
         shell: bash
         env:

@@ -37,7 +37,9 @@ export function CatalogPanel({
       const payload = await onViewDocumentSource(documentId);
       setSourceView(payload);
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "원문 조회 실패");
+      window.alert(
+        error instanceof Error ? error.message : "Failed to load source text"
+      );
     } finally {
       setSourceLoadingId(null);
     }
@@ -80,7 +82,7 @@ export function CatalogPanel({
               <th scope="col">File</th>
               <th scope="col">Cosmos</th>
               <th scope="col">Search chunks</th>
-              <th scope="col">원문</th>
+              <th scope="col">Source</th>
               <th scope="col">Delete</th>
             </tr>
           </thead>
@@ -130,7 +132,7 @@ export function CatalogPanel({
                   >
                     {sourceLoadingId === row.documentId
                       ? "Loading…"
-                      : "원문 보기"}
+                      : "View source"}
                   </button>
                 </td>
                 <td>
@@ -174,7 +176,7 @@ export function CatalogPanel({
                 }}
               >
                 <div className="source-modal-header">
-                  <h3>원문 보기</h3>
+                  <h3>View source</h3>
                   <button
                     type="button"
                     className="btn-secondary"
@@ -182,7 +184,7 @@ export function CatalogPanel({
                       setSourceView(null);
                     }}
                   >
-                    닫기
+                    Close
                   </button>
                 </div>
                 <p className="catalog-meta">
