@@ -71,7 +71,7 @@ export function ChatPanel({
               <span></span>
               <span></span>
               <span></span>
-              <p className="loading-text">GPT API 처리 중...</p>
+              <p className="loading-text">Processing...</p>
             </div>
           </article>
         )}
