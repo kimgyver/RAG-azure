@@ -64,6 +64,17 @@ export function ChatPanel({
             ) : null}
           </article>
         ))}
+        {chatPending && (
+          <article className="message message-assistant message-loading">
+            <span className="message-role">Assistant</span>
+            <div className="typing-indicator">
+              <span></span>
+              <span></span>
+              <span></span>
+              <p className="loading-text">GPT API 처리 중...</p>
+            </div>
+          </article>
+        )}
       </div>
 
       <form

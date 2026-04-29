@@ -1,5 +1,4 @@
 import type { RuntimeConfigSnapshot } from "../types/app";
-import { searchModeLabel } from "../utils/app";
 
 type HeroHeaderProps = {
   runtimeConfigStatus: "loading" | "ok" | "error";
@@ -17,15 +16,11 @@ export function HeroHeader({
   return (
     <header className="hero">
       <div>
-        <p className="eyebrow">Azure-native RAG demo</p>
-        <h1>Upload, index, and chat in one screen</h1>
+        <p className="eyebrow">RAG Chatbot</p>
+        <h1>Upload & Chat</h1>
         <p className="hero-copy">
-          Upload to Blob with a SAS token, process asynchronously via a queue,
-          retrieve with Azure AI Search, and-depending on configuration-try
-          embeddings, hybrid search, and generative answers. The box on the
-          right reflects your Functions deployment flags. If{" "}
-          <code className="inline-code">ALLOWED_TENANT_IDS</code> is empty, any
-          tenant ID is accepted; otherwise only listed IDs are allowed.
+          Upload documents, search, and get AI-generated answers in one place.
+          Your deployment configuration is shown on the right.
         </p>
       </div>
       <div className="hero-stats">
@@ -48,37 +43,25 @@ export function HeroHeader({
         ) : (
           <>
             <div>
-              <span>Cosmos · document state</span>
-              <strong>{runtimeConfig.cosmosDbEnabled ? "On" : "Off"}</strong>
-              <p className="hero-stat-sub">{cosmosStateSummary}</p>
-              <p className="hero-stat-sub hero-stat-sub-secondary">
-                {runtimeConfig.tenantAllowlistActive
-                  ? "Allowlisted tenants only (ALLOWED_TENANT_IDS)"
-                  : "No tenant restriction · local default"}
-              </p>
-            </div>
-            <div>
-              <span>AI Search · indexing</span>
-              <strong>{runtimeConfig.searchEnabled ? "On" : "Off"}</strong>
+              <span>Search & Indexing</span>
+              <strong>{runtimeConfig.searchEnabled ? "Ready" : "Off"}</strong>
               <p className="hero-stat-sub">
-                Embeddings{" "}
-                {runtimeConfig.embeddingPipelineEnabled ? "on" : "off"} · chat{" "}
-                {searchModeLabel(runtimeConfig.chatSearchMode)} · image OCR{" "}
-                {runtimeConfig.ocrEnabled ? "on" : "off"}
+                {runtimeConfig.embeddingPipelineEnabled
+                  ? "With embeddings"
+                  : "Keyword search"}
               </p>
             </div>
             <div>
-              <span>Chat answers</span>
+              <span>Chat Answers</span>
               <strong>
                 {runtimeConfig.openAiChatConfigured
-                  ? "Generative"
-                  : "Search snippets only"}
+                  ? "AI-Generated"
+                  : "Search Only"}
               </strong>
-              <p className="hero-stat-sub">{chatModeSummary}</p>
-              <p className="hero-stat-sub hero-stat-sub-secondary">
+              <p className="hero-stat-sub">
                 {runtimeConfig.openAiChatConfigured
-                  ? "OPENAI_API_KEY set - GPT-style answers"
-                  : "OPENAI_API_KEY not set yet - fallback mode is expected"}
+                  ? "Powered by GPT"
+                  : "From search results"}
               </p>
             </div>
           </>

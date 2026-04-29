@@ -71,15 +71,15 @@ button:hover {
 .app-shell {
   width: min(1180px, calc(100% - 2rem));
   margin: 0 auto;
-  padding: 2rem 0 3rem;
+  padding: 1.5rem 0 2rem;
 }
 
 .hero {
   display: grid;
   grid-template-columns: 1.6fr 1fr;
-  gap: 1.5rem;
+  gap: 1.2rem;
   align-items: stretch;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.2rem;
 }
 
 .eyebrow,
@@ -92,7 +92,7 @@ button:hover {
   font-family: "Space Grotesk", sans-serif;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  font-size: 0.76rem;
+  font-size: 0.7rem;
 }
 
 .hero > div,
@@ -107,20 +107,22 @@ button:hover {
 }
 
 .hero > div:first-child {
-  padding: 2rem;
+  padding: 1.5rem;
 }
 
 .hero h1 {
-  margin: 0.4rem 0 0.8rem;
-  max-width: 12ch;
-  font-size: clamp(2.2rem, 4vw, 4.3rem);
-  line-height: 0.98;
+  margin: 0.3rem 0 0.6rem;
+  max-width: 10ch;
+  font-size: clamp(1.8rem, 3vw, 2.8rem);
+  line-height: 1;
   font-family: "Space Grotesk", sans-serif;
 }
 
 .hero-copy {
   max-width: 56ch;
   color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
 }
 
 .hero-stats {
@@ -133,20 +135,20 @@ button:hover {
 
 .hero-stats > div {
   background: var(--panel-strong);
-  padding: 1.4rem 1.5rem;
+  padding: 1rem 1.2rem;
 }
 
 .hero-stats strong,
 .meta-card strong {
   display: block;
-  margin-top: 0.3rem;
-  font-size: 1.05rem;
+  margin-top: 0.25rem;
+  font-size: 0.95rem;
 }
 
 .hero-stat-sub {
-  margin: 0.45rem 0 0;
-  font-size: 0.78rem;
-  line-height: 1.45;
+  margin: 0.3rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.35;
   color: var(--muted);
   font-weight: 400;
   text-transform: none;
@@ -154,14 +156,13 @@ button:hover {
 }
 
 .hero-stat-sub-secondary {
-  margin-top: 0.25rem;
-  opacity: 0.88;
+  display: none;
 }
 
 .tenant-context-bar {
   margin: 0 auto 0.25rem;
   width: min(1180px, calc(100% - 2rem));
-  padding: 0.85rem 1.1rem;
+  padding: 0.7rem 1rem;
   border-radius: 16px;
   border: 1px solid var(--line);
   background: var(--panel-strong);
@@ -172,12 +173,12 @@ button:hover {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem 0.65rem;
+  gap: 0.4rem 0.5rem;
 }
 
 .tenant-context-label {
   font-weight: 700;
-  font-size: 0.88rem;
+  font-size: 0.82rem;
   color: var(--text);
 }
 
@@ -187,10 +188,10 @@ button:hover {
   max-width: 20rem;
   border-radius: 10px;
   border: 1px solid var(--line);
-  padding: 0.45rem 0.65rem;
+  padding: 0.4rem 0.6rem;
   background: white;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.88rem;
+  font-size: 0.82rem;
 }
 
 .tenant-context-sep {
@@ -200,24 +201,24 @@ button:hover {
 
 .tenant-context-id {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.95rem;
+  font-size: 0.82rem;
   font-weight: 700;
-  padding: 0.25rem 0.6rem;
+  padding: 0.2rem 0.5rem;
   border-radius: 8px;
   background: rgba(22, 99, 77, 0.1);
   color: var(--accent);
 }
 
 .tenant-context-desc {
-  margin: 0.55rem 0 0;
-  font-size: 0.82rem;
-  line-height: 1.45;
+  margin: 0.4rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.4;
   color: var(--muted);
 }
 
 .tenant-context-error {
-  margin: 0.5rem 0 0;
-  font-size: 0.82rem;
+  margin: 0.3rem 0 0;
+  font-size: 0.78rem;
   color: #8f1f1f;
   font-weight: 600;
 }
@@ -225,17 +226,17 @@ button:hover {
 .main-stack {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.2rem;
 }
 
 .workspace-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1.5rem;
+  gap: 1.2rem;
 }
 
 .panel {
-  padding: 1.5rem;
+  padding: 1.3rem;
 }
 
 .panel-header,
@@ -244,20 +245,21 @@ button:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.8rem;
 }
 
 .panel-header h2,
 .timeline-header h3 {
-  margin: 0.2rem 0 0;
-  font-size: 1.45rem;
+  margin: 0.15rem 0 0;
+  font-size: 1.25rem;
 }
 
 .panel-tag {
-  padding: 0.45rem 0.8rem;
+  padding: 0.4rem 0.7rem;
   border-radius: 999px;
   background: rgba(22, 99, 77, 0.09);
   color: var(--accent);
+  font-size: 0.73rem;
 }
 
 .dropzone {
@@ -732,6 +734,55 @@ button.btn-secondary:disabled {
   .upload-meta-grid {
     grid-template-columns: 1fr;
   }
+}
+
+.message-loading {
+  background: rgba(22, 99, 77, 0.08);
+  padding: 1rem 1rem 0.9rem !important;
+}
+
+.typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+
+.typing-indicator span {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: typingBounce 1.4s infinite;
+}
+
+.typing-indicator span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-indicator span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes typingBounce {
+  0%,
+  60%,
+  100% {
+    opacity: 0.6;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+}
+
+.loading-text {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--muted);
+  font-weight: 500;
 }
 
 @media (max-width: 640px) {

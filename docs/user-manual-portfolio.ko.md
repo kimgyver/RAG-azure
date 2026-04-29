@@ -89,7 +89,6 @@ flowchart TB
       direction TB
       M[Application Insights]
       N[Budget Alerts]
-      O[Search On/Off Scripts]
   end
   class M,N,O ops;
 

@@ -43,10 +43,8 @@ export function TenantContextBar({
         </p>
       ) : null}
       <p id="tenant-context-desc" className="tenant-context-desc">
-        Upload, blob path, indexing, chat retrieval, catalog, and purge all use
-        the <strong>same</strong> tenant. Leave blank for default{" "}
-        <code className="inline-code">{defaultTenantId}</code> from{" "}
-        <code className="inline-code">VITE_TENANT_ID</code>.
+        All operations (upload, search, chat) are isolated by tenant. Leave
+        blank to use default.
       </p>
     </div>
   );

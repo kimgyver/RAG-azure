@@ -72,11 +72,10 @@ rag-chunks index/vector]
 subgraph OpsGovernance
       direction TB
       LabelOps["OpsGovernance (운영/비용/모니터링)"]
-      O[Search On/Off Scripts]
       N[Budget Alerts 10/20 NZD]
       M[Application Insights]
 end
-class M,N,O ops;
+class M,N ops;
 
   %% Main flows: Upload
   E -->|Issue SAS| H
@@ -114,7 +113,6 @@ class M,N,O ops;
 - Ops
   - App Insights 모니터링
   - Azure Budget Alert
-  - Search 온디맨드 운영 스크립트
 
 ## 시나리오별 흐름
 
@@ -135,6 +133,4 @@ class M,N,O ops;
 
 ### 3) 운영/비용 제어
 
-1. Search가 필요할 때 `scripts/search-on.sh` 실행
-2. 사용하지 않을 때 `scripts/search-off.sh` 실행
-3. 월 예산 임계치(10/20 NZD) 알림으로 비용 초과를 조기 감지
+월 예산 임계치(10/20 NZD) 알림으로 비용 초과를 조기 감지하고, Application Insights로 모니터링합니다.
