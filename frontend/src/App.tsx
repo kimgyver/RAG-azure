@@ -102,18 +102,6 @@ function App() {
     runtimeConfigStatus === "ok" && runtimeConfig
       ? !runtimeConfig.openAiChatConfigured
       : false;
-  const cosmosStateSummary =
-    runtimeConfigStatus === "ok" && runtimeConfig
-      ? runtimeConfig.cosmosDbEnabled
-        ? "Metadata writes are active for upload status and catalog rows."
-        : "Metadata writes are off. Search can still work without Cosmos."
-      : "";
-  const chatModeSummary =
-    runtimeConfigStatus === "ok" && runtimeConfig
-      ? runtimeConfig.openAiChatConfigured
-        ? "Generative mode is active. Retrieved search chunks are passed to the model for answer synthesis."
-        : "Search-only mode is active. Answers are assembled from retrieved search chunks until OpenAI credentials are configured."
-      : "";
 
   const loadCatalog = useCallback(async () => {
     setCatalogStatus("loading");
@@ -718,8 +706,6 @@ function App() {
       <HeroHeader
         runtimeConfigStatus={runtimeConfigStatus}
         runtimeConfig={runtimeConfig}
-        cosmosStateSummary={cosmosStateSummary}
-        chatModeSummary={chatModeSummary}
       />
 
       <TenantContextBar

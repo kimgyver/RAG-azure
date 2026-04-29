@@ -3,15 +3,11 @@ import type { RuntimeConfigSnapshot } from "../types/app";
 type HeroHeaderProps = {
   runtimeConfigStatus: "loading" | "ok" | "error";
   runtimeConfig: RuntimeConfigSnapshot | null;
-  cosmosStateSummary: string;
-  chatModeSummary: string;
 };
 
 export function HeroHeader({
   runtimeConfigStatus,
-  runtimeConfig,
-  cosmosStateSummary,
-  chatModeSummary
+  runtimeConfig
 }: HeroHeaderProps) {
   return (
     <header className="hero">
