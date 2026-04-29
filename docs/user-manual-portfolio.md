@@ -128,6 +128,7 @@ flowchart TB
 ## 3) User Guide (Step-by-Step)
 
 ![RAG Chatbot UI](RAG-chatbot.png)
+
 This section is written so a reviewer can follow and operate the app without source-code knowledge.
 
 ### 3.1 Open the application

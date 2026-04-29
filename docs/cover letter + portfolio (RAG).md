@@ -35,4 +35,3 @@ The following project showcases my experience across frontend, backend, CI/CD an
 ---
 
 ![RAG Chatbot UI](RAG-chatbot.png)
-
