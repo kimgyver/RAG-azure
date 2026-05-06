@@ -451,15 +451,15 @@ resource "azurerm_container_app" "python_backend" {
       }
       env {
         name  = "COSMOS_DB_ENABLED"
-        value = "false"
+        value = lookup(var.extra_app_settings, "COSMOS_DB_ENABLED", "false")
       }
       env {
         name  = "COSMOS_ENDPOINT"
-        value = ""
+        value = lookup(var.extra_app_settings, "COSMOS_ENDPOINT", "")
       }
       env {
         name  = "COSMOS_KEY"
-        value = ""
+        value = lookup(var.extra_app_settings, "COSMOS_KEY", "")
       }
       env {
         name  = "COSMOS_DATABASE_ID"
@@ -471,15 +471,15 @@ resource "azurerm_container_app" "python_backend" {
       }
       env {
         name  = "SEARCH_ENABLED"
-        value = "false"
+        value = lookup(var.extra_app_settings, "SEARCH_ENABLED", "false")
       }
       env {
         name  = "SEARCH_ENDPOINT"
-        value = ""
+        value = lookup(var.extra_app_settings, "SEARCH_ENDPOINT", "")
       }
       env {
         name  = "SEARCH_API_KEY"
-        value = ""
+        value = lookup(var.extra_app_settings, "SEARCH_API_KEY", "")
       }
       env {
         name  = "SEARCH_INDEX_NAME"
@@ -487,23 +487,23 @@ resource "azurerm_container_app" "python_backend" {
       }
       env {
         name  = "CHAT_SEARCH_MODE"
-        value = "keyword"
+        value = lookup(var.extra_app_settings, "CHAT_SEARCH_MODE", "keyword")
       }
       env {
         name  = "EMBEDDING_ENABLED"
-        value = "false"
+        value = lookup(var.extra_app_settings, "EMBEDDING_ENABLED", "false")
       }
       env {
         name  = "OPENAI_MODEL"
-        value = "gpt-4o-mini"
+        value = lookup(var.extra_app_settings, "OPENAI_MODEL", "gpt-4o-mini")
       }
       env {
         name  = "OPENAI_EMBEDDING_MODEL"
-        value = "text-embedding-3-small"
+        value = lookup(var.extra_app_settings, "OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
       }
       env {
         name  = "EMBEDDING_DIMENSIONS"
-        value = "1536"
+        value = lookup(var.extra_app_settings, "EMBEDDING_DIMENSIONS", "1536")
       }
       env {
         name  = "ALLOWED_TENANT_IDS"
@@ -528,6 +528,10 @@ resource "azurerm_container_app" "python_backend" {
       env {
         name  = "AZURE_DOCUMENT_INTELLIGENCE_MODEL_ID"
         value = "prebuilt-read"
+      }
+      env {
+        name  = "OPENAI_API_KEY"
+        value = lookup(var.extra_app_settings, "OPENAI_API_KEY", "")
       }
     }
   }

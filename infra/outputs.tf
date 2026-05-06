@@ -52,12 +52,12 @@ output "python_web_app_name" {
 
 output "python_web_app_default_hostname" {
   description = "Default HTTPS hostname of the Python backend (Web App or Container App ingress FQDN)."
-  value       = var.python_backend_hosting == "webapp" ? azurerm_linux_web_app.python_backend[0].default_hostname : azurerm_container_app.python_backend[0].latest_revision_fqdn
+  value       = var.python_backend_hosting == "webapp" ? azurerm_linux_web_app.python_backend[0].default_hostname : azurerm_container_app.python_backend[0].ingress[0].fqdn
 }
 
 output "python_api_base_url" {
   description = "HTTPS URL prefix for the Python backend (/api/...) for the selected hosting mode."
-  value       = var.python_backend_hosting == "webapp" ? "https://${azurerm_linux_web_app.python_backend[0].default_hostname}/api" : "https://${azurerm_container_app.python_backend[0].latest_revision_fqdn}/api"
+  value       = var.python_backend_hosting == "webapp" ? "https://${azurerm_linux_web_app.python_backend[0].default_hostname}/api" : "https://${azurerm_container_app.python_backend[0].ingress[0].fqdn}/api"
 }
 
 output "document_intelligence_endpoint" {
