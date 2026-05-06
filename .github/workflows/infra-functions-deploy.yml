@@ -316,6 +316,8 @@ jobs:
           DI_NAME="${SLUG}-${NAME_SUFFIX}-di"
           ACR_NAME="$(printf '%s' "${SLUG}${NAME_SUFFIX}" | cut -c1-24)acr"
           LAW_NAME="${SLUG}-${NAME_SUFFIX}-law"
+          CAE_NAME="${SLUG}-${NAME_SUFFIX}-cae"
+          CA_NAME="${SLUG}-${NAME_SUFFIX}-pyca"
 
           import_if_needed \
             "azurerm_cognitive_account.document_intelligence" \
@@ -328,6 +330,14 @@ jobs:
           import_if_needed \
             "azurerm_log_analytics_workspace.python[0]" \
             "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.OperationalInsights/workspaces/${LAW_NAME}"
+
+          import_if_needed \
+            "azurerm_container_app_environment.python[0]" \
+            "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.App/managedEnvironments/${CAE_NAME}"
+
+          import_if_needed \
+            "azurerm_container_app.python_backend[0]" \
+            "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.App/containerApps/${CA_NAME}"
 
       - name: Terraform plan
         working-directory: ./infra
