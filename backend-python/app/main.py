@@ -719,20 +719,28 @@ def list_document_catalog(tenantId: str = Query(...)) -> Dict[str, Any]:
                 if not existing.get("blobName"):
                     existing["blobName"] = search_doc["blobName"]
             else:
-                by_id[document_id] = {
-                    "documentId": document_id,
-                    "tenantId": tenantId,
-                    "fileName": search_doc["fileName"] or document_id,
-                    "blobName": search_doc["blobName"],
-                    "cosmos": None,
-                    "search": search_doc,
-                }
-
-    documents = list(by_id.values())
-    documents.sort(
-        key=lambda row: (
-            (row.get("cosmos") or {}).get("updatedAt") or "",
             row.get("documentId") or "",
+            def list_search_document_groups(tenant_id: str, max_chunks_to_scan: int = 4000) -> Dict[str, Dict[str, Any]]:
+                """
+                Group chunks by documentId from the in-memory cache.
+                Limit scanned chunks to max_chunks_to_scan to match Node.js behavior for consistency.
+                """
+                groups: Dict[str, Dict[str, Any]] = {}
+                scanned = 0
+                for chunk in CHUNKS_BY_TENANT.get(tenant_id, []):
+                    if scanned >= max_chunks_to_scan:
+                        break
+                    scanned += 1
+                    current = groups.get(chunk.documentId)
+                    if not current:
+                        groups[chunk.documentId] = {
+                            "chunkCount": 1,
+                            "fileName": chunk.fileName,
+                            "blobName": chunk.blobName,
+                        }
+                    else:
+                        current["chunkCount"] += 1
+                return groups
         ),
         reverse=True,
     )
