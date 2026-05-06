@@ -392,6 +392,9 @@ resource "azurerm_container_app" "python_backend" {
   }
 
   template {
+    min_replicas = 0
+    max_replicas = 1
+
     container {
       name   = "python-backend"
       image  = "${azurerm_container_registry.python[0].login_server}/${var.python_container_image_name}:${var.python_container_image_tag}"
