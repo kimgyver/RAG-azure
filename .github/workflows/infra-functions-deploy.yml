@@ -19,6 +19,7 @@ on:
     paths:
       - "infra/**"
       - "backend-nodejs/functions-ingestion/**"
+      - "backend-python/**"
       - ".github/workflows/infra-functions-deploy.yml"
 
 permissions:
@@ -375,3 +376,40 @@ jobs:
           APP_NAME="$(terraform -chdir=../../infra output -raw function_app_name)"
           export FUNCTIONS_WORKER_RUNTIME=node
           func azure functionapp publish "$APP_NAME" --typescript
+
+      - name: Build and push Python Docker image
+        if: github.event_name == 'push' || inputs.terraform_apply
+        run: |
+          SLUG="ragapp"
+          SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
+          if [ -n "${TF_VAR_name_suffix:-}" ]; then
+            NAME_SUFFIX="$(echo "$TF_VAR_name_suffix" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-8)"
+          else
+            NAME_SUFFIX="$(printf '%s' "${SUBSCRIPTION_ID}:${SLUG}" | md5sum | cut -c1-8)"
+          fi
+          ACR_NAME="$(printf '%s' "${SLUG}${NAME_SUFFIX}" | cut -c1-24)acr"
+          ACR_LOGIN_SERVER="${ACR_NAME}.azurecr.io"
+
+          az acr login --name "$ACR_NAME"
+          docker build -t "${ACR_LOGIN_SERVER}/python-backend:latest" ./backend-python
+          docker push "${ACR_LOGIN_SERVER}/python-backend:latest"
+
+      - name: Update Container App with new image
+        if: github.event_name == 'push' || inputs.terraform_apply
+        run: |
+          SLUG="ragapp"
+          SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
+          if [ -n "${TF_VAR_name_suffix:-}" ]; then
+            NAME_SUFFIX="$(echo "$TF_VAR_name_suffix" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-8)"
+          else
+            NAME_SUFFIX="$(printf '%s' "${SUBSCRIPTION_ID}:${SLUG}" | md5sum | cut -c1-8)"
+          fi
+          RG_NAME="${SLUG}-${NAME_SUFFIX}-rg"
+          ACR_NAME="$(printf '%s' "${SLUG}${NAME_SUFFIX}" | cut -c1-24)acr"
+          CA_NAME="${SLUG}-${NAME_SUFFIX}-pyca"
+          ACR_LOGIN_SERVER="${ACR_NAME}.azurecr.io"
+
+          az containerapp update \
+            --name "$CA_NAME" \
+            --resource-group "$RG_NAME" \
+            --image "${ACR_LOGIN_SERVER}/python-backend:latest"
