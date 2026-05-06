@@ -22,6 +22,41 @@ variable "app_service_plan_sku" {
   default     = "Y1"
 }
 
+variable "python_web_app_service_plan_sku" {
+  type        = string
+  description = "Linux App Service plan SKU for the Python Web App when Terraform needs to create a dedicated plan."
+  default     = "B1"
+}
+
+variable "python_web_app_python_version" {
+  type        = string
+  description = "Python runtime version for the Azure Web App hosting the FastAPI backend."
+  default     = "3.11"
+}
+
+variable "python_backend_hosting" {
+  type        = string
+  description = "Python backend hosting target: webapp or containerapp. Container Apps is recommended when App Service plan quota is unavailable."
+  default     = "containerapp"
+
+  validation {
+    condition     = contains(["webapp", "containerapp"], var.python_backend_hosting)
+    error_message = "python_backend_hosting must be either 'webapp' or 'containerapp'."
+  }
+}
+
+variable "python_container_image_name" {
+  type        = string
+  description = "Repository name for the Python backend image in ACR."
+  default     = "python-backend"
+}
+
+variable "python_container_image_tag" {
+  type        = string
+  description = "Tag for the Python backend image in ACR."
+  default     = "latest"
+}
+
 variable "existing_linux_service_plan_resource_id" {
   type        = string
   description = "Optional full ARM ID of an existing Linux App Service plan (Microsoft.Web/serverFarms/...). Use when this subscription cannot create any new plan (Basic VMs / Dynamic VMs quota 0). Function App is created in the plan's region; other resources stay in var.location."

@@ -194,6 +194,16 @@ button:hover {
   font-size: 0.82rem;
 }
 
+.backend-target-select {
+  min-width: 14rem;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  padding: 0.4rem 0.6rem;
+  background: white;
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
 .tenant-context-sep {
   color: var(--muted);
   font-weight: 700;

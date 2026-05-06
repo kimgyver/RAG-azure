@@ -1,8 +1,8 @@
 /**
  * Creates the uploads blob container on your Azure Storage account.
- * Reads backend/functions-ingestion/local.settings.json (same layout as Functions).
+ * Reads backend-nodejs/functions-ingestion/local.settings.json (same layout as Functions).
  *
- * Usage (from backend/functions-ingestion):
+ * Usage (from backend-nodejs/functions-ingestion):
  *   npm run storage:setup
  *
  * Requires a real Azure Storage account (not Azurite). Use the same account as

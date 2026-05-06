@@ -16,7 +16,13 @@ locals {
   # Storage account: 3–24 chars, lower-case letters and numbers only
   storage_account_name = substr("${local.slug}${local.name_suffix}", 0, 24)
   # Function app name: alphanumeric and hyphens, max 60, globally unique
-  function_app_name = "${local.slug}-${local.name_suffix}-fn"
+  function_app_name               = "${local.slug}-${local.name_suffix}-fn"
+  python_web_app_name             = "${local.slug}-${local.name_suffix}-py"
+  python_container_app_name       = "${local.slug}-${local.name_suffix}-pyca"
+  python_container_env_name       = "${local.slug}-${local.name_suffix}-cae"
+  python_acr_name                 = substr("${local.slug}${local.name_suffix}acr", 0, 50)
+  document_intelligence_name      = "${local.slug}-${local.name_suffix}-di"
+  document_intelligence_subdomain = substr("${local.slug}${local.name_suffix}di", 0, 24)
   common_tags = merge(
     { workload = "rag-ingestion" },
     var.tags
@@ -31,10 +37,49 @@ locals {
   ) : []
   existing_plan_rg_name = local.use_existing_plan ? local.plan_id_parts[0] : ""
   existing_plan_name    = local.use_existing_plan ? local.plan_id_parts[1] : ""
-  service_plan_id         = local.use_existing_plan ? data.azurerm_service_plan.external[0].id : azurerm_service_plan.functions[0].id
-  function_app_location   = local.use_existing_plan ? data.azurerm_service_plan.external[0].location : var.location
+  service_plan_id       = local.use_existing_plan ? data.azurerm_service_plan.external[0].id : azurerm_service_plan.functions[0].id
+  function_app_location = local.use_existing_plan ? data.azurerm_service_plan.external[0].location : var.location
+  # Python Web App always uses its own dedicated plan (Consumption plans cannot host regular Web Apps)
+  python_web_app_location = azurerm_resource_group.main.location
   # Keep CORS inputs deterministic during initial apply to avoid provider plan drift bugs.
   browser_cors_origins = distinct(compact(concat(var.blob_cors_origins, [trimspace(var.static_web_app_origin)])))
+}
+
+resource "azurerm_service_plan" "python_web" {
+  count               = var.python_backend_hosting == "webapp" ? 1 : 0
+  name                = "${local.slug}-${local.name_suffix}-py-asp"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  os_type             = "Linux"
+  sku_name            = "F1"
+  tags                = local.common_tags
+}
+
+resource "azurerm_cognitive_account" "document_intelligence" {
+  name                          = local.document_intelligence_name
+  location                      = azurerm_resource_group.main.location
+  resource_group_name           = azurerm_resource_group.main.name
+  kind                          = "FormRecognizer"
+  sku_name                      = "S0"
+  custom_subdomain_name         = local.document_intelligence_subdomain
+  local_auth_enabled            = true
+  public_network_access_enabled = true
+  tags                          = local.common_tags
+}
+
+data "archive_file" "python_backend_zip" {
+  count       = var.python_backend_hosting == "webapp" ? 1 : 0
+  type        = "zip"
+  source_dir  = "${path.module}/../backend-python"
+  output_path = "${path.module}/.terraform/python-backend.zip"
+  excludes = [
+    ".venv",
+    ".env",
+    "__pycache__",
+    ".pytest_cache",
+    "Dockerfile",
+    ".dockerignore"
+  ]
 }
 
 data "azurerm_service_plan" "external" {
@@ -96,9 +141,9 @@ resource "azurerm_servicebus_queue" "processing" {
 resource "azurerm_servicebus_namespace_authorization_rule" "functions" {
   name         = "ingestion-functions"
   namespace_id = azurerm_servicebus_namespace.main.id
-  listen         = true
-  send           = true
-  manage         = false
+  listen       = true
+  send         = true
+  manage       = false
 }
 
 resource "azurerm_service_plan" "functions" {
@@ -151,21 +196,115 @@ resource "azurerm_linux_function_app" "ingestion" {
 
   app_settings = merge(
     {
-      FUNCTIONS_WORKER_RUNTIME              = "node"
-      AzureWebJobsStorage                   = azurerm_storage_account.main.primary_connection_string
+      FUNCTIONS_WORKER_RUNTIME                                                                      = "node"
+      AzureWebJobsStorage                                                                           = azurerm_storage_account.main.primary_connection_string
+      APPLICATIONINSIGHTS_CONNECTION_STRING                                                         = azurerm_application_insights.main.connection_string
+      APPINSIGHTS_INSTRUMENTATIONKEY                                                                = azurerm_application_insights.main.instrumentation_key
+      AZURE_STORAGE_ACCOUNT_NAME                                                                    = azurerm_storage_account.main.name
+      AZURE_STORAGE_ACCOUNT_KEY                                                                     = azurerm_storage_account.main.primary_access_key
+      AZURE_STORAGE_BLOB_ENDPOINT                                                                   = azurerm_storage_account.main.primary_blob_endpoint
+      AZURE_STORAGE_CONTAINER_NAME                                                                  = azurerm_storage_container.uploads.name
+      SERVICE_BUS_CONNECTION                                                                        = azurerm_servicebus_namespace_authorization_rule.functions.primary_connection_string
+      AZURE_PROCESSING_QUEUE_NAME                                                                   = azurerm_servicebus_queue.processing.name
+      SAS_EXPIRY_MINUTES                                                                            = "15"
+      MAX_UPLOAD_SIZE_MB                                                                            = "20"
+      BLOB_TRIGGER_SOURCE                                                                           = "LogsAndContainerScan"
+      CHUNK_SIZE_CHARS                                                                              = "1200"
+      CHUNK_OVERLAP_CHARS                                                                           = "200"
+      COSMOS_DB_ENABLED                                                                             = "false"
+      COSMOS_ENDPOINT                                                                               = ""
+      COSMOS_KEY                                                                                    = ""
+      COSMOS_DATABASE_ID                                                                            = "rag-db"
+      COSMOS_DOCUMENTS_CONTAINER_ID                                                                 = "documents"
+      SEARCH_ENABLED                                                                                = "false"
+      SEARCH_ENDPOINT                                                                               = ""
+      SEARCH_API_KEY                                                                                = ""
+      SEARCH_INDEX_NAME                                                                             = "rag-chunks"
+      CHAT_SEARCH_MODE                                                                              = "hybrid"
+      CHAT_PROMPT_CHAR_BUDGET                                                                       = "12000"
+      CHAT_QUESTION_CHAR_LIMIT                                                                      = "1200"
+      CHAT_CONTEXT_CHAR_BUDGET                                                                      = "7000"
+      CHAT_MAX_COMPLETION_TOKENS                                                                    = "600"
+      CHAT_MEMORY_RECENT_TURNS                                                                      = "3"
+      CHAT_MEMORY_RECENT_CHAR_BUDGET                                                                = "2200"
+      CHAT_MEMORY_SUMMARY_CHAR_BUDGET                                                               = "1200"
+      CHAT_SLOW_THRESHOLD_MS                                                                        = "4000"
+      "AzureFunctionsJobHost__logging__logLevel__default"                                           = "None"
+      "AzureFunctionsJobHost__logging__logLevel__Host__Singleton"                                   = "None"
+      "AzureFunctionsJobHost__logging__logLevel__Host__Results"                                     = "None"
+      "AzureFunctionsJobHost__logging__logLevel__Host__Triggers__Blobs"                             = "None"
+      "AzureFunctionsJobHost__logging__logLevel__Host__Triggers__Queues"                            = "None"
+      "AzureFunctionsJobHost__logging__logLevel__Host__Triggers__ServiceBus"                        = "None"
+      "AzureFunctionsJobHost__logging__logLevel__Azure__Core"                                       = "None"
+      "AzureFunctionsJobHost__logging__logLevel__Azure__Storage"                                    = "None"
+      "AzureFunctionsJobHost__logging__logLevel__Azure__Storage__Blobs"                             = "None"
+      "AzureFunctionsJobHost__logging__logLevel__Azure__Messaging__ServiceBus"                      = "None"
+      "AzureFunctionsJobHost__logging__logLevel__Microsoft__Azure__WebJobs__Extensions__ServiceBus" = "None"
+      "AzureFunctionsJobHost__logging__logLevel__Microsoft__Azure__WebJobs__Host__Singleton"        = "None"
+      "AzureFunctionsJobHost__logging__logLevel__Function__chat"                                    = "Warning"
+      EMBEDDING_ENABLED                                                                             = "false"
+      AZURE_OPENAI_ENDPOINT                                                                         = ""
+      AZURE_OPENAI_API_KEY                                                                          = ""
+      AZURE_OPENAI_API_VERSION                                                                      = "2024-02-01"
+      AZURE_OPENAI_EMBEDDING_DEPLOYMENT                                                             = "text-embedding-3-small"
+      OPENAI_EMBEDDING_MODEL                                                                        = "text-embedding-3-small"
+      EMBEDDING_DIMENSIONS                                                                          = "1536"
+      ALLOWED_TENANT_IDS                                                                            = join(",", var.allowed_tenant_ids)
+      OCR_ENABLED                                                                                   = "true"
+      OCR_PROVIDER                                                                                  = "azure-document-intelligence"
+      AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT                                                          = azurerm_cognitive_account.document_intelligence.endpoint
+      AZURE_DOCUMENT_INTELLIGENCE_KEY                                                               = azurerm_cognitive_account.document_intelligence.primary_access_key
+      AZURE_DOCUMENT_INTELLIGENCE_MODEL_ID                                                          = "prebuilt-read"
+      OCR_LANGS                                                                                     = "eng"
+      OCR_MAX_IMAGE_BYTES                                                                           = "12582912"
+      OCR_MAX_EDGE_PX                                                                               = "2000"
+    },
+    var.extra_app_settings
+  )
+}
+
+resource "azurerm_linux_web_app" "python_backend" {
+  count               = var.python_backend_hosting == "webapp" ? 1 : 0
+  name                = local.python_web_app_name
+  location            = local.python_web_app_location
+  resource_group_name = azurerm_resource_group.main.name
+  service_plan_id     = azurerm_service_plan.python_web[0].id
+  https_only          = true
+  zip_deploy_file     = data.archive_file.python_backend_zip[0].output_path
+  tags                = local.common_tags
+
+  site_config {
+    always_on        = false
+    app_command_line = "python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+    application_stack {
+      python_version = var.python_web_app_python_version
+    }
+
+    cors {
+      allowed_origins     = local.browser_cors_origins
+      support_credentials = false
+    }
+  }
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  app_settings = merge(
+    {
+      SCM_DO_BUILD_DURING_DEPLOYMENT        = "true"
+      ENABLE_ORYX_BUILD                     = "true"
+      PYTHONPATH                            = "/home/site/wwwroot"
+      PYTHON_API_HOST                       = "0.0.0.0"
+      PYTHON_API_PORT                       = "8000"
       APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.main.connection_string
       APPINSIGHTS_INSTRUMENTATIONKEY        = azurerm_application_insights.main.instrumentation_key
       AZURE_STORAGE_ACCOUNT_NAME            = azurerm_storage_account.main.name
-      AZURE_STORAGE_ACCOUNT_KEY              = azurerm_storage_account.main.primary_access_key
+      AZURE_STORAGE_ACCOUNT_KEY             = azurerm_storage_account.main.primary_access_key
       AZURE_STORAGE_BLOB_ENDPOINT           = azurerm_storage_account.main.primary_blob_endpoint
       AZURE_STORAGE_CONTAINER_NAME          = azurerm_storage_container.uploads.name
-      SERVICE_BUS_CONNECTION                 = azurerm_servicebus_namespace_authorization_rule.functions.primary_connection_string
-      AZURE_PROCESSING_QUEUE_NAME           = azurerm_servicebus_queue.processing.name
       SAS_EXPIRY_MINUTES                    = "15"
-      MAX_UPLOAD_SIZE_MB                    = "20"
-      BLOB_TRIGGER_SOURCE                   = "LogsAndContainerScan"
-      CHUNK_SIZE_CHARS                      = "1200"
-      CHUNK_OVERLAP_CHARS                   = "200"
       COSMOS_DB_ENABLED                     = "false"
       COSMOS_ENDPOINT                       = ""
       COSMOS_KEY                            = ""
@@ -175,43 +314,233 @@ resource "azurerm_linux_function_app" "ingestion" {
       SEARCH_ENDPOINT                       = ""
       SEARCH_API_KEY                        = ""
       SEARCH_INDEX_NAME                     = "rag-chunks"
-      CHAT_SEARCH_MODE                      = "hybrid"
-      CHAT_PROMPT_CHAR_BUDGET               = "12000"
-      CHAT_QUESTION_CHAR_LIMIT              = "1200"
-      CHAT_CONTEXT_CHAR_BUDGET              = "7000"
-      CHAT_MAX_COMPLETION_TOKENS            = "600"
-      CHAT_MEMORY_RECENT_TURNS              = "3"
-      CHAT_MEMORY_RECENT_CHAR_BUDGET        = "2200"
-      CHAT_MEMORY_SUMMARY_CHAR_BUDGET       = "1200"
-      CHAT_SLOW_THRESHOLD_MS                = "4000"
-      "AzureFunctionsJobHost__logging__logLevel__default" = "None"
-      "AzureFunctionsJobHost__logging__logLevel__Host__Singleton" = "None"
-      "AzureFunctionsJobHost__logging__logLevel__Host__Results" = "None"
-      "AzureFunctionsJobHost__logging__logLevel__Host__Triggers__Blobs" = "None"
-      "AzureFunctionsJobHost__logging__logLevel__Host__Triggers__Queues" = "None"
-      "AzureFunctionsJobHost__logging__logLevel__Host__Triggers__ServiceBus" = "None"
-      "AzureFunctionsJobHost__logging__logLevel__Azure__Core" = "None"
-      "AzureFunctionsJobHost__logging__logLevel__Azure__Storage" = "None"
-      "AzureFunctionsJobHost__logging__logLevel__Azure__Storage__Blobs" = "None"
-      "AzureFunctionsJobHost__logging__logLevel__Azure__Messaging__ServiceBus" = "None"
-      "AzureFunctionsJobHost__logging__logLevel__Microsoft__Azure__WebJobs__Extensions__ServiceBus" = "None"
-      "AzureFunctionsJobHost__logging__logLevel__Microsoft__Azure__WebJobs__Host__Singleton" = "None"
-      "AzureFunctionsJobHost__logging__logLevel__Function__chat" = "Warning"
+      CHAT_SEARCH_MODE                      = "keyword"
       EMBEDDING_ENABLED                     = "false"
-      AZURE_OPENAI_ENDPOINT                 = ""
-      AZURE_OPENAI_API_KEY                  = ""
-      AZURE_OPENAI_API_VERSION              = "2024-02-01"
-      AZURE_OPENAI_EMBEDDING_DEPLOYMENT     = "text-embedding-3-small"
+      OPENAI_MODEL                          = "gpt-4o-mini"
       OPENAI_EMBEDDING_MODEL                = "text-embedding-3-small"
       EMBEDDING_DIMENSIONS                  = "1536"
       ALLOWED_TENANT_IDS                    = join(",", var.allowed_tenant_ids)
       OCR_ENABLED                           = "true"
-      OCR_LANGS                             = "eng"
-      OCR_MAX_IMAGE_BYTES                   = "12582912"
-      OCR_MAX_EDGE_PX                       = "2000"
+      OCR_PROVIDER                          = "azure-document-intelligence"
+      AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT  = azurerm_cognitive_account.document_intelligence.endpoint
+      AZURE_DOCUMENT_INTELLIGENCE_KEY       = azurerm_cognitive_account.document_intelligence.primary_access_key
+      AZURE_DOCUMENT_INTELLIGENCE_MODEL_ID  = "prebuilt-read"
+      CORS_ALLOW_ORIGINS                    = join(",", local.browser_cors_origins)
+      WEBSITES_PORT                         = "8000"
     },
     var.extra_app_settings
   )
+}
+
+resource "azurerm_container_registry" "python" {
+  count               = var.python_backend_hosting == "containerapp" ? 1 : 0
+  name                = local.python_acr_name
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+  sku                 = "Basic"
+  admin_enabled       = true
+  tags                = local.common_tags
+}
+
+resource "azurerm_log_analytics_workspace" "python" {
+  count               = var.python_backend_hosting == "containerapp" ? 1 : 0
+  name                = "${local.slug}-${local.name_suffix}-law"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  sku                 = "PerGB2018"
+  retention_in_days   = 30
+  tags                = local.common_tags
+}
+
+resource "azurerm_container_app_environment" "python" {
+  count                      = var.python_backend_hosting == "containerapp" ? 1 : 0
+  name                       = local.python_container_env_name
+  location                   = azurerm_resource_group.main.location
+  resource_group_name        = azurerm_resource_group.main.name
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.python[0].id
+  tags                       = local.common_tags
+}
+
+resource "terraform_data" "python_image_build" {
+  count = var.python_backend_hosting == "containerapp" ? 1 : 0
+  input = {
+    image = "${azurerm_container_registry.python[0].login_server}/${var.python_container_image_name}:${var.python_container_image_tag}"
+  }
+
+  provisioner "local-exec" {
+    command = "az acr build --registry ${azurerm_container_registry.python[0].name} --image ${var.python_container_image_name}:${var.python_container_image_tag} ${path.module}/../backend-python"
+  }
+}
+
+resource "azurerm_container_app" "python_backend" {
+  count                        = var.python_backend_hosting == "containerapp" ? 1 : 0
+  name                         = local.python_container_app_name
+  container_app_environment_id = azurerm_container_app_environment.python[0].id
+  resource_group_name          = azurerm_resource_group.main.name
+  revision_mode                = "Single"
+  tags                         = local.common_tags
+
+  registry {
+    server               = azurerm_container_registry.python[0].login_server
+    username             = azurerm_container_registry.python[0].admin_username
+    password_secret_name = "acr-password"
+  }
+
+  secret {
+    name  = "acr-password"
+    value = azurerm_container_registry.python[0].admin_password
+  }
+
+  template {
+    container {
+      name   = "python-backend"
+      image  = "${azurerm_container_registry.python[0].login_server}/${var.python_container_image_name}:${var.python_container_image_tag}"
+      cpu    = 0.5
+      memory = "1.0Gi"
+
+      env {
+        name  = "PYTHONPATH"
+        value = "/app"
+      }
+      env {
+        name  = "PYTHON_API_HOST"
+        value = "0.0.0.0"
+      }
+      env {
+        name  = "PYTHON_API_PORT"
+        value = "8000"
+      }
+      env {
+        name  = "WEBSITES_PORT"
+        value = "8000"
+      }
+      env {
+        name  = "CORS_ALLOW_ORIGINS"
+        value = join(",", local.browser_cors_origins)
+      }
+      env {
+        name  = "APPLICATIONINSIGHTS_CONNECTION_STRING"
+        value = azurerm_application_insights.main.connection_string
+      }
+      env {
+        name  = "APPINSIGHTS_INSTRUMENTATIONKEY"
+        value = azurerm_application_insights.main.instrumentation_key
+      }
+      env {
+        name  = "AZURE_STORAGE_ACCOUNT_NAME"
+        value = azurerm_storage_account.main.name
+      }
+      env {
+        name  = "AZURE_STORAGE_ACCOUNT_KEY"
+        value = azurerm_storage_account.main.primary_access_key
+      }
+      env {
+        name  = "AZURE_STORAGE_BLOB_ENDPOINT"
+        value = azurerm_storage_account.main.primary_blob_endpoint
+      }
+      env {
+        name  = "AZURE_STORAGE_CONTAINER_NAME"
+        value = azurerm_storage_container.uploads.name
+      }
+      env {
+        name  = "SAS_EXPIRY_MINUTES"
+        value = "15"
+      }
+      env {
+        name  = "COSMOS_DB_ENABLED"
+        value = "false"
+      }
+      env {
+        name  = "COSMOS_ENDPOINT"
+        value = ""
+      }
+      env {
+        name  = "COSMOS_KEY"
+        value = ""
+      }
+      env {
+        name  = "COSMOS_DATABASE_ID"
+        value = "rag-db"
+      }
+      env {
+        name  = "COSMOS_DOCUMENTS_CONTAINER_ID"
+        value = "documents"
+      }
+      env {
+        name  = "SEARCH_ENABLED"
+        value = "false"
+      }
+      env {
+        name  = "SEARCH_ENDPOINT"
+        value = ""
+      }
+      env {
+        name  = "SEARCH_API_KEY"
+        value = ""
+      }
+      env {
+        name  = "SEARCH_INDEX_NAME"
+        value = "rag-chunks"
+      }
+      env {
+        name  = "CHAT_SEARCH_MODE"
+        value = "keyword"
+      }
+      env {
+        name  = "EMBEDDING_ENABLED"
+        value = "false"
+      }
+      env {
+        name  = "OPENAI_MODEL"
+        value = "gpt-4o-mini"
+      }
+      env {
+        name  = "OPENAI_EMBEDDING_MODEL"
+        value = "text-embedding-3-small"
+      }
+      env {
+        name  = "EMBEDDING_DIMENSIONS"
+        value = "1536"
+      }
+      env {
+        name  = "ALLOWED_TENANT_IDS"
+        value = join(",", var.allowed_tenant_ids)
+      }
+      env {
+        name  = "OCR_ENABLED"
+        value = "true"
+      }
+      env {
+        name  = "OCR_PROVIDER"
+        value = "azure-document-intelligence"
+      }
+      env {
+        name  = "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT"
+        value = azurerm_cognitive_account.document_intelligence.endpoint
+      }
+      env {
+        name  = "AZURE_DOCUMENT_INTELLIGENCE_KEY"
+        value = azurerm_cognitive_account.document_intelligence.primary_access_key
+      }
+      env {
+        name  = "AZURE_DOCUMENT_INTELLIGENCE_MODEL_ID"
+        value = "prebuilt-read"
+      }
+    }
+  }
+
+  ingress {
+    external_enabled = true
+    target_port      = 8000
+    transport        = "auto"
+
+    traffic_weight {
+      percentage      = 100
+      latest_revision = true
+    }
+  }
+
+  depends_on = [terraform_data.python_image_build]
 }
 
 resource "azurerm_static_web_app" "frontend" {

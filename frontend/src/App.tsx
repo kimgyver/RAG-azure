@@ -12,6 +12,7 @@ import {
   type ChatResponse,
   type CreateTextKnowledgeResponse,
   type CreateUploadResponse,
+  type BackendTarget,
   type DocumentItem,
   type DocumentSourceResponse,
   type DocumentStatus,
@@ -74,21 +75,52 @@ function App() {
   const [purgeBusyId, setPurgeBusyId] = useState<string | null>(null);
   const [tenantError, setTenantError] = useState<string>("");
 
-  const uploadApiBaseUrl = useMemo(() => {
+  const nodeApiBaseUrl = useMemo(() => {
     const fromEnv =
+      import.meta.env.VITE_NODE_API_BASE_URL?.trim() ||
       import.meta.env.VITE_UPLOAD_API_BASE_URL?.trim() ||
       import.meta.env.VITE_API_BASE_URL?.trim();
     if (fromEnv) {
       return fromEnv.replace(/\/$/, "");
     }
-    // Default to relative /api in both local and deployed frontend to avoid hardcoded hosts.
     return "/api";
   }, []);
 
-  const uploadApiKey = useMemo(
-    () => import.meta.env.VITE_UPLOAD_API_KEY?.trim() ?? "",
+  const pythonApiBaseUrl = useMemo(() => {
+    const fromEnv = import.meta.env.VITE_PYTHON_API_BASE_URL?.trim();
+    if (fromEnv) {
+      return fromEnv.replace(/\/$/, "");
+    }
+    return nodeApiBaseUrl;
+  }, [nodeApiBaseUrl]);
+
+  const defaultBackendTarget = useMemo<BackendTarget>(() => {
+    const fromEnv = import.meta.env.VITE_DEFAULT_BACKEND?.trim().toLowerCase();
+    return fromEnv === "python" ? "python" : "node";
+  }, []);
+
+  const [backendTarget, setBackendTarget] =
+    useState<BackendTarget>(defaultBackendTarget);
+
+  const apiBaseUrl = useMemo(
+    () => (backendTarget === "python" ? pythonApiBaseUrl : nodeApiBaseUrl),
+    [backendTarget, pythonApiBaseUrl, nodeApiBaseUrl]
+  );
+
+  const nodeApiKey = useMemo(
+    () =>
+      import.meta.env.VITE_NODE_API_KEY?.trim() ||
+      import.meta.env.VITE_UPLOAD_API_KEY?.trim() ||
+      "",
     []
   );
+
+  const pythonApiKey = useMemo(
+    () => import.meta.env.VITE_PYTHON_API_KEY?.trim() || "",
+    []
+  );
+
+  const apiKey = backendTarget === "python" ? pythonApiKey : nodeApiKey;
 
   const effectiveTenantId = tenantId.trim() || defaultTenantId;
   const chatSessionId = useMemo(
@@ -108,12 +140,12 @@ function App() {
     setCatalogMessage("");
     try {
       const response = await fetch(
-        `${uploadApiBaseUrl}/documents/catalog?tenantId=${encodeURIComponent(
+        `${apiBaseUrl}/documents/catalog?tenantId=${encodeURIComponent(
           effectiveTenantId
         )}`,
         {
           headers: {
-            ...(uploadApiKey ? { "x-functions-key": uploadApiKey } : {})
+            ...(apiKey ? { "x-functions-key": apiKey } : {})
           }
         }
       );
@@ -141,7 +173,7 @@ function App() {
         setTenantError(message);
       }
     }
-  }, [effectiveTenantId, uploadApiBaseUrl, uploadApiKey]);
+  }, [effectiveTenantId, apiBaseUrl, apiKey]);
 
   const refreshCatalogWithRetries = useCallback(
     async (attempts = 4, intervalMs = 350) => {
@@ -164,9 +196,9 @@ function App() {
     const loadRuntime = async () => {
       setRuntimeConfigStatus("loading");
       try {
-        const response = await fetch(`${uploadApiBaseUrl}/flags/deployment`, {
+        const response = await fetch(`${apiBaseUrl}/flags/deployment`, {
           headers: {
-            ...(uploadApiKey ? { "x-functions-key": uploadApiKey } : {})
+            ...(apiKey ? { "x-functions-key": apiKey } : {})
           }
         });
         if (!response.ok) {
@@ -189,7 +221,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [uploadApiBaseUrl, uploadApiKey]);
+  }, [apiBaseUrl, apiKey]);
 
   useEffect(() => {
     setChatMessagesByTenant(prev => {
@@ -221,10 +253,10 @@ function App() {
     const pollStatus = async () => {
       try {
         const response = await fetch(
-          `${uploadApiBaseUrl}/documents/${trackedDocument.documentId}?tenantId=${trackedDocument.tenantId}`,
+          `${apiBaseUrl}/documents/${trackedDocument.documentId}?tenantId=${trackedDocument.tenantId}`,
           {
             headers: {
-              ...(uploadApiKey ? { "x-functions-key": uploadApiKey } : {})
+              ...(apiKey ? { "x-functions-key": apiKey } : {})
             }
           }
         );
@@ -302,12 +334,7 @@ function App() {
       isCancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [
-    trackedDocument,
-    uploadApiBaseUrl,
-    uploadApiKey,
-    refreshCatalogWithRetries
-  ]);
+  }, [trackedDocument, apiBaseUrl, apiKey, refreshCatalogWithRetries]);
 
   const onFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
@@ -338,11 +365,11 @@ function App() {
       setUploadState("requesting-sas");
       setUploadMessage("Requesting SAS URL...");
 
-      const sasResponse = await fetch(`${uploadApiBaseUrl}/uploads/create`, {
+      const sasResponse = await fetch(`${apiBaseUrl}/uploads/create`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(uploadApiKey ? { "x-functions-key": uploadApiKey } : {})
+          ...(apiKey ? { "x-functions-key": apiKey } : {})
         },
         body: JSON.stringify({
           tenantId: effectiveTenantId,
@@ -425,7 +452,7 @@ function App() {
         setTenantError("tenantId is not allowed for this deployment.");
       }
       setUploadMessage(
-        `Upload error: ${errorMessage} (API: ${uploadApiBaseUrl}/uploads/create)`
+        `Upload error: ${errorMessage} (API: ${apiBaseUrl}/uploads/create)`
       );
     }
   };
@@ -466,11 +493,11 @@ function App() {
           content: message.content
         }));
 
-      const response = await fetch(`${uploadApiBaseUrl}/chat`, {
+      const response = await fetch(`${apiBaseUrl}/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(uploadApiKey ? { "x-functions-key": uploadApiKey } : {})
+          ...(apiKey ? { "x-functions-key": apiKey } : {})
         },
         body: JSON.stringify({
           tenantId: effectiveTenantId,
@@ -563,11 +590,11 @@ function App() {
       setTextIngestState("submitting");
       setTextIngestMessage("Registering text and creating chunks...");
 
-      const response = await fetch(`${uploadApiBaseUrl}/knowledge/text`, {
+      const response = await fetch(`${apiBaseUrl}/knowledge/text`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(uploadApiKey ? { "x-functions-key": uploadApiKey } : {})
+          ...(apiKey ? { "x-functions-key": apiKey } : {})
         },
         body: JSON.stringify({
           tenantId: effectiveTenantId,
@@ -641,13 +668,13 @@ function App() {
     setPurgeBusyId(documentId);
     try {
       const response = await fetch(
-        `${uploadApiBaseUrl}/documents/${encodeURIComponent(
+        `${apiBaseUrl}/documents/${encodeURIComponent(
           documentId
         )}/purge?tenantId=${encodeURIComponent(effectiveTenantId)}`,
         {
           method: "DELETE",
           headers: {
-            ...(uploadApiKey ? { "x-functions-key": uploadApiKey } : {})
+            ...(apiKey ? { "x-functions-key": apiKey } : {})
           }
         }
       );
@@ -682,12 +709,12 @@ function App() {
     documentId: string
   ): Promise<DocumentSourceResponse> => {
     const response = await fetch(
-      `${uploadApiBaseUrl}/documents/${encodeURIComponent(
+      `${apiBaseUrl}/documents/${encodeURIComponent(
         documentId
       )}/source?tenantId=${encodeURIComponent(effectiveTenantId)}`,
       {
         headers: {
-          ...(uploadApiKey ? { "x-functions-key": uploadApiKey } : {})
+          ...(apiKey ? { "x-functions-key": apiKey } : {})
         }
       }
     );
@@ -712,12 +739,18 @@ function App() {
         tenantId={tenantId}
         effectiveTenantId={effectiveTenantId}
         defaultTenantId={defaultTenantId}
+        backendTarget={backendTarget}
+        backendApiBaseUrl={apiBaseUrl}
         tenantError={tenantError}
         onTenantIdChange={value => {
           setTenantId(value);
           if (tenantError) {
             setTenantError("");
           }
+        }}
+        onBackendTargetChange={value => {
+          setBackendTarget(value);
+          setTenantError("");
         }}
       />
 
@@ -729,7 +762,7 @@ function App() {
             uploadState={uploadState}
             uploadMessage={uploadMessage}
             effectiveTenantId={effectiveTenantId}
-            uploadApiBaseUrl={uploadApiBaseUrl}
+            uploadApiBaseUrl={apiBaseUrl}
             documents={documents}
             textTitle={textTitle}
             textContent={textContent}

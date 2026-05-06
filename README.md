@@ -7,7 +7,8 @@ Azure 네이티브 구성(Blob, Functions, Service Bus, 선택적 Cosmos DB·AI 
 ```text
 /infra                 Terraform: RG, Storage, Service Bus, Linux Function App, Application Insights
 /frontend              React + Vite SPA (업로드·챗·카탈로그 UI)
-/backend/functions-ingestion   Azure Functions (TypeScript): 업로드 SAS, Blob/Queue 트리거, 챗·카탈로그 HTTP
+/backend-nodejs/functions-ingestion   Azure Functions (TypeScript): 업로드 SAS, Blob/Queue 트리거, 챗·카탈로그 HTTP
+/backend-python        FastAPI (Python): 텍스트 등록 기반 로컬 RAG API MVP
 /docs                  아키텍처·개발·배포·보안 문서
 ```
 
@@ -37,12 +38,20 @@ npm install
 npm run dev
 ```
 
-`frontend/.env.example`을 참고해 `.env`를 만든다. 개발 모드에서는 `VITE_UPLOAD_API_BASE_URL`을 비워 두면 Vite가 `/api`를 로컬 Functions(`127.0.0.1:7071`)로 넘긴다.
+`frontend/.env.example`을 참고해 `.env`를 만든다. 개발 모드에서는 `VITE_UPLOAD_API_BASE_URL`을 비워 두면 Vite가 `/api`를 로컬 Node Functions(`127.0.0.1:7071`)로 넘긴다.
+
+Node/Python 백엔드를 화면에서 전환하려면 아래 환경 변수를 권장한다.
+
+```bash
+VITE_NODE_API_BASE_URL=https://<function-app>.azurewebsites.net/api
+VITE_PYTHON_API_BASE_URL=https://<python-backend-host>/api
+VITE_DEFAULT_BACKEND=node
+```
 
 ### Functions (업로드·파이프라인·챗 API)
 
 ```bash
-cd backend/functions-ingestion
+cd backend-nodejs/functions-ingestion
 # local.settings.json 이 없을 때만: cp local.settings.json.example local.settings.json
 # 이미 있으면 cp 하지 말 것(덮어쓰기 방지). 스토리지 등 값은 그 파일에 채운다.
 npm install
@@ -51,6 +60,27 @@ npm run start
 ```
 
 상세 환경 변수와 단계별 구현 상태는 [docs/development.md](./docs/development.md)를 본다.
+
+### Python backend (FastAPI, 추가 구현)
+
+```bash
+cd backend-python
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+set -a && source .env && set +a
+uvicorn app.main:app --host "${PYTHON_API_HOST:-127.0.0.1}" --port "${PYTHON_API_PORT:-8000}" --reload
+```
+
+이미 만들어둔 `.venv`가 Python 3.8/3.9라면 새 가상환경을 다시 만드는 편이 안전하다.
+
+프론트를 Python 백엔드로 붙일 때는 `frontend/.env`에 아래를 지정한다.
+
+```bash
+VITE_PYTHON_API_BASE_URL=http://127.0.0.1:8000/api
+VITE_DEFAULT_BACKEND=python
+```
 
 ### 화면에서 텍스트를 바로 지식베이스에 등록
 
@@ -69,7 +99,7 @@ npm run start
 
 ### Azure에 올릴 때 (한 줄 요약)
 
-1. `infra`와 `backend/functions-ingestion` 변경은 `Infra + Functions Deploy` 워크플로가 처리( Terraform apply + Functions publish ).
+1. `infra`와 `backend-nodejs/functions-ingestion` 변경은 `Infra + Functions Deploy` 워크플로가 처리( Terraform apply + Functions publish ).
 2. `frontend` 변경은 `Azure Static Web Apps CI/CD` 워크플로가 처리( React build + SWA 배포 ).
 3. 포털 또는 `extra_app_settings`로 **AI Search**(또는 Cosmos) 연결 — 안 하면 카탈로그가 **503** ([deployment-azure.md §4](./docs/deployment-azure.md#4-optional-backends-azure-ai-search-cosmos-db-openai)).
 4. 프론트 빌드 환경변수에는 `VITE_UPLOAD_API_BASE_URL`만 사용하고, 비밀키는 넣지 않음.

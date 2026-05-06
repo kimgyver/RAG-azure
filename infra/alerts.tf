@@ -20,20 +20,20 @@ resource "azurerm_monitor_action_group" "chat_ops" {
 }
 
 resource "azurerm_monitor_scheduled_query_rules_alert_v2" "chat_failures" {
-  count               = local.chat_alerts_enabled ? 1 : 0
-  name                = "${local.slug}-${local.name_suffix}-chat-fail"
-  location            = azurerm_resource_group.main.location
-  resource_group_name = azurerm_resource_group.main.name
-  scopes              = [azurerm_application_insights.main.id]
-  description         = "Alert when /api/chat has repeated failed requests."
-  severity            = 2
-  enabled             = true
-  evaluation_frequency = "PT5M"
-  window_duration      = "PT10M"
+  count                   = local.chat_alerts_enabled ? 1 : 0
+  name                    = "${local.slug}-${local.name_suffix}-chat-fail"
+  location                = azurerm_resource_group.main.location
+  resource_group_name     = azurerm_resource_group.main.name
+  scopes                  = [azurerm_application_insights.main.id]
+  description             = "Alert when /api/chat has repeated failed requests."
+  severity                = 2
+  enabled                 = true
+  evaluation_frequency    = "PT5M"
+  window_duration         = "PT10M"
   auto_mitigation_enabled = true
 
   criteria {
-    query = <<-KQL
+    query                   = <<-KQL
       requests
       | where timestamp > ago(10m)
       | where tostring(url) has "/api/chat"
@@ -53,20 +53,20 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "chat_failures" {
 }
 
 resource "azurerm_monitor_scheduled_query_rules_alert_v2" "chat_latency" {
-  count               = local.chat_alerts_enabled ? 1 : 0
-  name                = "${local.slug}-${local.name_suffix}-chat-lat"
-  location            = azurerm_resource_group.main.location
-  resource_group_name = azurerm_resource_group.main.name
-  scopes              = [azurerm_application_insights.main.id]
-  description         = "Alert when p95 /api/chat latency exceeds threshold."
-  severity            = 2
-  enabled             = true
-  evaluation_frequency = "PT5M"
-  window_duration      = "PT10M"
+  count                   = local.chat_alerts_enabled ? 1 : 0
+  name                    = "${local.slug}-${local.name_suffix}-chat-lat"
+  location                = azurerm_resource_group.main.location
+  resource_group_name     = azurerm_resource_group.main.name
+  scopes                  = [azurerm_application_insights.main.id]
+  description             = "Alert when p95 /api/chat latency exceeds threshold."
+  severity                = 2
+  enabled                 = true
+  evaluation_frequency    = "PT5M"
+  window_duration         = "PT10M"
   auto_mitigation_enabled = true
 
   criteria {
-    query = <<-KQL
+    query                   = <<-KQL
       requests
       | where timestamp > ago(10m)
       | where tostring(url) has "/api/chat"

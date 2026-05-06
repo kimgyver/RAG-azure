@@ -320,7 +320,7 @@ UI에는 다음 두 상태 중 하나가 표시됩니다.
 
 - 파일: .github/workflows/infra-functions-deploy.yml
 - 트리거:
-  - main 브랜치 push 중 infra/**, backend/functions-ingestion/** 변경
+  - main 브랜치 push 중 infra/**, backend-nodejs/functions-ingestion/** 변경
   - 수동 workflow_dispatch
 - 주요 역할:
   - Azure 로그인 및 환경 값 해석

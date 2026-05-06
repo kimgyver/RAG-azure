@@ -19,12 +19,12 @@ pnpm-debug.log*
 node_modules/
 dist/
 # func azure functionapp publish respects .gitignore — must ship compiled JS
-!backend/functions-ingestion/dist/
+!backend-nodejs/functions-ingestion/dist/
 *.tsbuildinfo
 
 # Azure Functions local settings and emulator data
-backend/functions-ingestion/local.settings.json
-backend/functions-ingestion/.azurite/
+backend-nodejs/functions-ingestion/local.settings.json
+backend-nodejs/functions-ingestion/.azurite/
 
 # Local tool and editor files
 .vscode/

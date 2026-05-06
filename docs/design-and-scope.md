@@ -156,18 +156,18 @@ Terraform은 쓰는 게 맞지만, 가장 처음 할 일은 아니다.
 ```text
 /infra              Terraform (RG, Storage, Service Bus, Linux Function App, Application Insights)
 /frontend           React + Vite SPA
-/backend/functions-ingestion   Azure Functions: SAS 업로드, Blob/Queue 트리거, 문서 처리, 챗·카탈로그 HTTP
+/backend-nodejs/functions-ingestion   Azure Functions: SAS 업로드, Blob/Queue 트리거, 문서 처리, 챗·카탈로그 HTTP
 /docs               architecture, development, deployment-azure, design, security
 ```
 
 - 챗·검색 HTTP는 **`functions-ingestion` 안**에 있다(`POST /api/chat` 등).
-- 공용 타입·유틸은 주로 `backend/functions-ingestion/src/shared/` 아래에 있다.
+- 공용 타입·유틸은 주로 `backend-nodejs/functions-ingestion/src/shared/` 아래에 있다.
 
 **나중에 워커와 API를 나누고 싶을 때의 목표 구조 예시:**
 
 ```text
 /infra
-/backend/functions-ingestion   # ingestion + queue worker만
+/backend-nodejs/functions-ingestion   # ingestion + queue worker만
 /backend/functions-chat        # chat / search 전용 HTTP (또는 Web App)
 /docs
 ```

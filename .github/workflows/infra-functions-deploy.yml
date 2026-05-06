@@ -18,7 +18,7 @@ on:
       - main
     paths:
       - "infra/**"
-      - "backend/functions-ingestion/**"
+      - "backend-nodejs/functions-ingestion/**"
       - ".github/workflows/infra-functions-deploy.yml"
 
 permissions:
@@ -333,17 +333,17 @@ jobs:
 
       - name: Install backend dependencies
         if: github.event_name == 'push' || inputs.publish_functions
-        working-directory: ./backend/functions-ingestion
+        working-directory: ./backend-nodejs/functions-ingestion
         run: npm ci
 
       - name: Build backend
         if: github.event_name == 'push' || inputs.publish_functions
-        working-directory: ./backend/functions-ingestion
+        working-directory: ./backend-nodejs/functions-ingestion
         run: npm run build
 
       - name: Publish Function App
         if: github.event_name == 'push' || inputs.publish_functions
-        working-directory: ./backend/functions-ingestion
+        working-directory: ./backend-nodejs/functions-ingestion
         run: |
           APP_NAME="$(terraform -chdir=../../infra output -raw function_app_name)"
           export FUNCTIONS_WORKER_RUNTIME=node

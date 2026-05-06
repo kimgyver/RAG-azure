@@ -33,3 +33,40 @@ output "application_insights_connection_string" {
   value       = azurerm_application_insights.main.connection_string
   sensitive   = true
 }
+
+output "storage_account_key" {
+  description = "Primary access key for the storage account (sensitive)."
+  value       = azurerm_storage_account.main.primary_access_key
+  sensitive   = true
+}
+
+output "storage_blob_endpoint" {
+  description = "Primary blob endpoint for the storage account."
+  value       = azurerm_storage_account.main.primary_blob_endpoint
+}
+
+output "python_web_app_name" {
+  description = "Python backend host name (Web App or Container App resource name)."
+  value       = var.python_backend_hosting == "webapp" ? azurerm_linux_web_app.python_backend[0].name : azurerm_container_app.python_backend[0].name
+}
+
+output "python_web_app_default_hostname" {
+  description = "Default HTTPS hostname of the Python backend (Web App or Container App ingress FQDN)."
+  value       = var.python_backend_hosting == "webapp" ? azurerm_linux_web_app.python_backend[0].default_hostname : azurerm_container_app.python_backend[0].latest_revision_fqdn
+}
+
+output "python_api_base_url" {
+  description = "HTTPS URL prefix for the Python backend (/api/...) for the selected hosting mode."
+  value       = var.python_backend_hosting == "webapp" ? "https://${azurerm_linux_web_app.python_backend[0].default_hostname}/api" : "https://${azurerm_container_app.python_backend[0].latest_revision_fqdn}/api"
+}
+
+output "document_intelligence_endpoint" {
+  description = "Azure Document Intelligence endpoint used for OCR."
+  value       = azurerm_cognitive_account.document_intelligence.endpoint
+}
+
+output "document_intelligence_primary_key" {
+  description = "Primary access key for Azure Document Intelligence (sensitive)."
+  value       = azurerm_cognitive_account.document_intelligence.primary_access_key
+  sensitive   = true
+}

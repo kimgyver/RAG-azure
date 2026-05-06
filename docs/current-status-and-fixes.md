@@ -23,7 +23,7 @@
 - 원인:
   - `terraform apply` 이후 Function App 패키지 설정이 다시 쓰이면서 코드 패키지 라우트가 사라질 수 있음
 - 조치:
-  - `backend/functions-ingestion`에서 `npm run build`
+  - `backend-nodejs/functions-ingestion`에서 `npm run build`
   - `func azure functionapp publish "$(terraform -chdir=../../infra output -raw function_app_name)"`
 - 재발 방지:
   - 인프라 변경 후에는 항상 publish를 후속 단계로 실행
@@ -98,7 +98,7 @@
 1. 인프라 변경 적용
    - `cd infra && terraform apply`
 2. 백엔드 코드 재배포
-   - `cd backend/functions-ingestion`
+   - `cd backend-nodejs/functions-ingestion`
    - `npm run build`
    - `func azure functionapp publish "$(terraform -chdir=../../infra output -raw function_app_name)"`
 3. 프론트 배포(정적 호스팅 사용 시)

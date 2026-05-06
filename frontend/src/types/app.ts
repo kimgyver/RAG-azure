@@ -99,6 +99,8 @@ export type RuntimeConfigSnapshot = {
   tenantAllowlistActive: boolean;
 };
 
+export type BackendTarget = "node" | "python";
+
 export type CatalogCosmos = {
   status: string;
   updatedAt: string;

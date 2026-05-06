@@ -323,7 +323,7 @@ Terraform value for reviewers:
 
 - File: .github/workflows/infra-functions-deploy.yml
 - Triggered on:
-  - Push to main for infra/** and backend/functions-ingestion/** changes
+  - Push to main for infra/** and backend-nodejs/functions-ingestion/** changes
   - Manual workflow_dispatch
 - Main responsibilities:
   - Azure login and environment resolution

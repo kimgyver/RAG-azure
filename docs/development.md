@@ -52,7 +52,7 @@
 
 1. **스토리지 계정** 하나 준비. `AzureWebJobsStorage`와 문서 Blob(`AZURE_STORAGE_*`)에 **같은 계정**을 쓰는 것이 가장 단순하다(Blob 트리거 경로 `uploads/{name}`와 SAS 업로드 컨테이너가 일치).
 2. `local.settings.json.example`을 복사해 `local.settings.json`을 만들고, 예시의 `YOUR_*` 자리를 실제 연결 문자열·키로 바꾼다.
-3. Blob 컨테이너만 자동 생성: `cd backend/functions-ingestion && npm run storage:setup`  
+3. Blob 컨테이너만 자동 생성: `cd backend-nodejs/functions-ingestion && npm run storage:setup`  
    **Service Bus 큐**(`AZURE_PROCESSING_QUEUE_NAME`, 기본 `processing-jobs`)는 포털에서 네임스페이스에 만들어 둔다.
 4. **브라우저에서 SAS로 Blob에 PUT**할 때는 스토리지 계정 **CORS**에 Vite 출처(예: `http://localhost:5173`)와 메서드 `PUT` 등을 허용한다. (Azurite 때처럼 Vite 프록시에 의존하지 않아도 된다.)
 5. `vite.config.ts`의 `/devstoreaccount1` 프록시는 **에뮬레이터 URL을 쓸 때만** 의미가 있다. 클라우드 Blob URL만 쓰면 프록시는 타지 않는다.
@@ -100,7 +100,7 @@ npm run dev
 
 현재 구현 상태:
 
-- `backend/functions-ingestion`에 Azure Functions(TypeScript v4) 프로젝트 생성
+- `backend-nodejs/functions-ingestion`에 Azure Functions(TypeScript v4) 프로젝트 생성
 - `POST /api/uploads/create` HTTP 함수 구현 완료
 - 요청값(`tenantId`, `fileName`, `contentType`) 검증 후 `documentId`, `blobName`, `uploadUrl` 반환
 - 프론트엔드 업로드 버튼이 해당 API를 호출한 뒤 Blob direct upload(`PUT`)를 수행하도록 연결 완료
@@ -109,12 +109,12 @@ npm run dev
 
 1. 함수 앱 설정 파일 준비
 
-- `backend/functions-ingestion/local.settings.json` **이 이미 있으면** 이 단계를 건너뛴다. (`cp`로 예시를 덮어쓰면 기존 비밀·설정이 사라진다.)
+- `backend-nodejs/functions-ingestion/local.settings.json` **이 이미 있으면** 이 단계를 건너뛴다. (`cp`로 예시를 덮어쓰면 기존 비밀·설정이 사라진다.)
 - **없을 때만** 예시를 복사한 뒤 값을 채운다.
 - `local.settings.json`에는 키/연결 문자열 등 비밀값이 들어가므로 git에 커밋하지 않는다(로컬 전용 파일).
 
 ```bash
-cd backend/functions-ingestion
+cd backend-nodejs/functions-ingestion
 cp local.settings.json.example local.settings.json
 ```
 
@@ -131,7 +131,7 @@ cp local.settings.json.example local.settings.json
 3. 함수 앱 실행
 
 ```bash
-cd backend/functions-ingestion
+cd backend-nodejs/functions-ingestion
 npm install
 npm run build
 npm run start
@@ -214,11 +214,11 @@ Queue Trigger 기반 워커를 구현한다.
 
 운영/디버깅 명령:
 
-- `cd backend/functions-ingestion && npm run search:clear`
+- `cd backend-nodejs/functions-ingestion && npm run search:clear`
   - 기본 인덱스(`SEARCH_INDEX_NAME`, 기본값 `rag-chunks`)의 문서를 모두 삭제하고 인덱스 스키마는 유지한다.
-- `cd backend/functions-ingestion && npm run search:clear -- rag-chunks-debug`
+- `cd backend-nodejs/functions-ingestion && npm run search:clear -- rag-chunks-debug`
   - 특정 인덱스 이름을 넘겨 해당 인덱스의 문서만 모두 삭제한다.
-- `cd backend/functions-ingestion && npm run search:debug:rebuild`
+- `cd backend-nodejs/functions-ingestion && npm run search:debug:rebuild`
   - `rag-chunks`의 현재 문서를 읽어 `rag-chunks-debug` 인덱스를 다시 만들고, 조회 가능한 `embedding` 필드를 채운다.
 
 실행 결과 예시:
@@ -266,7 +266,7 @@ tenant 필터 기반 하이브리드 검색과 답변 생성을 구현한다.
 기존 Search 인덱스만 있고 Cosmos 메타데이터가 비어 있는 문서를 채우려면:
 
 ```bash
-cd backend/functions-ingestion
+cd backend-nodejs/functions-ingestion
 npm run cosmos:backfill
 ```
 
@@ -287,14 +287,14 @@ npm run cosmos:backfill
 
 서비스 경계가 안정되면 인프라를 코드로 옮긴다. 이 레포에는 `infra/`에 Azure 스택(Resource Group, Storage, Service Bus, Linux Function App, Application Insights)용 Terraform이 있다. **Cosmos / AI Search / OpenAI 리소스는 Terraform이 기본 생성하지 않으며**, Function 앱 설정도 꺼 둔다 — 클라우드에서 Search·챗·카탈로그를 쓰려면 [deployment-azure.md §4](./deployment-azure.md#4-optional-backends-azure-ai-search-cosmos-db-openai)대로 연결한다.
 
-코드 배포: `backend/functions-ingestion`에서 **`npm run build` 후** `func azure functionapp publish …` ([publish / `dist` / 404](./deployment-azure.md#function-routes-return-404-after-publish)). 전체 순서·체크리스트는 [deployment-azure.md](./deployment-azure.md) 본문과 [Post-deploy checklist](./deployment-azure.md#5-post-deploy-checklist)를 본다.
+코드 배포: `backend-nodejs/functions-ingestion`에서 **`npm run build` 후** `func azure functionapp publish …` ([publish / `dist` / 404](./deployment-azure.md#function-routes-return-404-after-publish)). 전체 순서·체크리스트는 [deployment-azure.md](./deployment-azure.md) 본문과 [Post-deploy checklist](./deployment-azure.md#5-post-deploy-checklist)를 본다.
 
 실무에서 자주 헷갈리는 포인트:
 
 - `terraform apply`: 리소스(인프라) 생성/변경/삭제 단계
 - `func azure functionapp publish`: 이미 생성된 Function App에 코드만 재배포
 - 코드만 바뀐 경우에는 일반적으로 `publish`만 반복하고, 인프라나 앱 설정 변경이 있을 때 `terraform apply`를 실행한다.
-- `backend/functions-ingestion/local.settings.json`은 로컬 실행 전용이다. Azure에 배포된 Function App은 Portal/ARM/Terraform app settings 값을 사용한다.
+- `backend-nodejs/functions-ingestion/local.settings.json`은 로컬 실행 전용이다. Azure에 배포된 Function App은 Portal/ARM/Terraform app settings 값을 사용한다.
 
 `infra/outputs.tf`의 주요 활용:
 
@@ -320,5 +320,5 @@ Storage 용어 정리(공식 명칭):
 
 운영 로그 소음(폴링 로그) 줄이기:
 
-- `backend/functions-ingestion/host.json`의 `logging.logLevel`에서 `Host.Triggers.*`를 `Warning`으로 설정해 Blob/Queue 폴링 로그를 최소화했다.
+- `backend-nodejs/functions-ingestion/host.json`의 `logging.logLevel`에서 `Host.Triggers.*`를 `Warning`으로 설정해 Blob/Queue 폴링 로그를 최소화했다.
 - 필요한 경우 `Function.chat`만 `Information`으로 유지해 챗 텔레메트리만 집중적으로 볼 수 있다.
