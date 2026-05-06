@@ -312,6 +312,23 @@ jobs:
             echo "Skipping azurerm_service_plan.functions[0] import (using existing Linux plan)."
           fi
 
+          # Python backend resources
+          DI_NAME="${SLUG}-${NAME_SUFFIX}-di"
+          ACR_NAME="$(printf '%s' "${SLUG}${NAME_SUFFIX}" | cut -c1-24)acr"
+          LAW_NAME="${SLUG}-${NAME_SUFFIX}-law"
+
+          import_if_needed \
+            "azurerm_cognitive_account.document_intelligence" \
+            "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.CognitiveServices/accounts/${DI_NAME}"
+
+          import_if_needed \
+            "azurerm_container_registry.python[0]" \
+            "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.ContainerRegistry/registries/${ACR_NAME}"
+
+          import_if_needed \
+            "azurerm_log_analytics_workspace.python[0]" \
+            "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.OperationalInsights/workspaces/${LAW_NAME}"
+
       - name: Terraform plan
         working-directory: ./infra
         run: terraform plan -no-color
