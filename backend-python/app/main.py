@@ -433,11 +433,13 @@ def upsert_local_index(
     content_type: Optional[str],
     source_type: str,
     created_at: Optional[str] = None,
+    write_to_search: bool = False,
 ) -> int:
     chunks = chunk_text(text)
 
-    # Write to Azure Search index (persistent store)
-    if search_enabled():
+    # Write to Azure Search index only when explicitly requested
+    # (new documents being indexed for the first time, not re-hydration of existing docs)
+    if write_to_search and search_enabled():
         _upsert_search_chunks(tenant_id, document_id, blob_name, file_name, chunks)
 
     # Also keep in in-memory cache for fast chat/search within same process lifetime
@@ -567,6 +569,7 @@ def process_queued_document(record: Dict[str, Any]) -> bool:
         content_type=content_type,
         source_type=source_type,
         created_at=record.get("createdAt"),
+        write_to_search=True,
     )
 
     upsert_document_metadata(
@@ -928,6 +931,10 @@ def create_text_knowledge(payload: CreateTextKnowledgeRequest) -> Dict[str, Any]
             )
         )
     CHUNKS_BY_TENANT[payload.tenantId] = tenant_chunks
+
+    # Write to Azure Search index (persistent store for new text knowledge)
+    if search_enabled():
+        _upsert_search_chunks(payload.tenantId, document_id, blob_name, file_name, chunks)
 
     return {
         "documentId": document_id,
