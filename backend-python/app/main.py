@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
 import re
+import urllib.request
 from io import BytesIO
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -640,18 +642,77 @@ def delete_document_metadata(document_id: str, tenant_id: str) -> bool:
         return False
 
 
-def list_search_document_groups(tenant_id: str) -> Dict[str, Dict[str, Any]]:
-    groups: Dict[str, Dict[str, Any]] = {}
-    for chunk in CHUNKS_BY_TENANT.get(tenant_id, []):
-        current = groups.get(chunk.documentId)
-        if not current:
-            groups[chunk.documentId] = {
-                "chunkCount": 1,
-                "fileName": chunk.fileName,
-                "blobName": chunk.blobName,
-            }
-        else:
-            current["chunkCount"] += 1
+def list_search_document_groups(tenant_id: str, max_chunks_to_scan: int = 4000) -> Dict[str, Dict[str, Any]]:
+    """Query Azure AI Search API to count chunks per documentId, matching Node.js behavior."""
+    endpoint = os.getenv("SEARCH_ENDPOINT", "").strip().rstrip("/")
+    api_key = os.getenv("SEARCH_API_KEY", "").strip()
+    index_name = os.getenv("SEARCH_INDEX_NAME", "rag-chunks").strip()
+
+    if not endpoint or not api_key:
+        # Fallback to in-memory cache if Search API not configured
+        groups: Dict[str, Dict[str, Any]] = {}
+        for chunk in CHUNKS_BY_TENANT.get(tenant_id, []):
+            current = groups.get(chunk.documentId)
+            if not current:
+                groups[chunk.documentId] = {
+                    "chunkCount": 1,
+                    "fileName": chunk.fileName,
+                    "blobName": chunk.blobName,
+                }
+            else:
+                current["chunkCount"] += 1
+        return groups
+
+    safe_tenant = tenant_id.replace("'", "''")
+    odata_filter = f"tenantId eq '{safe_tenant}'"
+    groups = {}
+    scanned = 0
+    skip = 0
+    page_size = 1000
+    api_version = "2023-11-01"
+
+    while scanned < max_chunks_to_scan:
+        take = min(page_size, max_chunks_to_scan - scanned)
+        params = (
+            f"search=*"
+            f"&$filter={quote(odata_filter)}"
+            f"&$top={take}&$skip={skip}"
+            f"&$select=documentId,fileName,blobName"
+            f"&api-version={api_version}"
+        )
+        url = f"{endpoint}/indexes/{index_name}/docs?{params}"
+        req = urllib.request.Request(
+            url, headers={"api-key": api_key, "Accept": "application/json"}
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read())
+        except Exception:
+            break
+
+        hits = data.get("value", [])
+        if not hits:
+            break
+
+        for doc in hits:
+            did = (doc.get("documentId") or "").strip()
+            if not did:
+                continue
+            existing = groups.get(did)
+            if existing:
+                existing["chunkCount"] += 1
+            else:
+                groups[did] = {
+                    "chunkCount": 1,
+                    "fileName": doc.get("fileName") or "",
+                    "blobName": doc.get("blobName") or "",
+                }
+
+        scanned += len(hits)
+        skip += len(hits)
+        if len(hits) < take:
+            break
+
     return groups
 
 
