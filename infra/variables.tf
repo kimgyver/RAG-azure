@@ -47,13 +47,13 @@ variable "python_backend_hosting" {
 
 variable "python_container_image_name" {
   type        = string
-  description = "Repository name for the Python backend image in ACR."
-  default     = "python-backend"
+  description = "Docker Hub image name for the Python backend (e.g. jinyoung777/rag-python-backend)."
+  default     = "jinyoung777/rag-python-backend"
 }
 
 variable "python_container_image_tag" {
   type        = string
-  description = "Tag for the Python backend image in ACR."
+  description = "Tag for the Python backend Docker Hub image."
   default     = "latest"
 }
 

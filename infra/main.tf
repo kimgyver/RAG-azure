@@ -20,7 +20,6 @@ locals {
   python_web_app_name             = "${local.slug}-${local.name_suffix}-py"
   python_container_app_name       = "${local.slug}-${local.name_suffix}-pyca"
   python_container_env_name       = "${local.slug}-${local.name_suffix}-cae"
-  python_acr_name                 = substr("${local.slug}${local.name_suffix}acr", 0, 50)
   document_intelligence_name      = "${local.slug}-${local.name_suffix}-di"
   document_intelligence_subdomain = substr("${local.slug}${local.name_suffix}di", 0, 24)
   common_tags = merge(
@@ -332,16 +331,6 @@ resource "azurerm_linux_web_app" "python_backend" {
   )
 }
 
-resource "azurerm_container_registry" "python" {
-  count               = var.python_backend_hosting == "containerapp" ? 1 : 0
-  name                = local.python_acr_name
-  resource_group_name = azurerm_resource_group.main.name
-  location            = azurerm_resource_group.main.location
-  sku                 = "Basic"
-  admin_enabled       = true
-  tags                = local.common_tags
-}
-
 resource "azurerm_log_analytics_workspace" "python" {
   count               = var.python_backend_hosting == "containerapp" ? 1 : 0
   name                = "${local.slug}-${local.name_suffix}-law"
@@ -361,17 +350,6 @@ resource "azurerm_container_app_environment" "python" {
   tags                       = local.common_tags
 }
 
-resource "terraform_data" "python_image_build" {
-  count = var.python_backend_hosting == "containerapp" ? 1 : 0
-  input = {
-    image = "${azurerm_container_registry.python[0].login_server}/${var.python_container_image_name}:${var.python_container_image_tag}"
-  }
-
-  provisioner "local-exec" {
-    command = "az acr build --registry ${azurerm_container_registry.python[0].name} --image ${var.python_container_image_name}:${var.python_container_image_tag} ${path.module}/../backend-python"
-  }
-}
-
 resource "azurerm_container_app" "python_backend" {
   count                        = var.python_backend_hosting == "containerapp" ? 1 : 0
   name                         = local.python_container_app_name
@@ -380,24 +358,13 @@ resource "azurerm_container_app" "python_backend" {
   revision_mode                = "Single"
   tags                         = local.common_tags
 
-  registry {
-    server               = azurerm_container_registry.python[0].login_server
-    username             = azurerm_container_registry.python[0].admin_username
-    password_secret_name = "acr-password"
-  }
-
-  secret {
-    name  = "acr-password"
-    value = azurerm_container_registry.python[0].admin_password
-  }
-
   template {
     min_replicas = 0
     max_replicas = 1
 
     container {
       name   = "python-backend"
-      image  = "${azurerm_container_registry.python[0].login_server}/${var.python_container_image_name}:${var.python_container_image_tag}"
+      image  = "${var.python_container_image_name}:${var.python_container_image_tag}"
       cpu    = 0.5
       memory = "1.0Gi"
 
@@ -547,7 +514,6 @@ resource "azurerm_container_app" "python_backend" {
     }
   }
 
-  depends_on = [terraform_data.python_image_build]
 }
 
 resource "azurerm_static_web_app" "frontend" {
