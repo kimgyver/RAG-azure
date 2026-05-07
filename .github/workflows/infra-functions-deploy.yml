@@ -315,7 +315,6 @@ jobs:
 
           # Python backend resources
           DI_NAME="${SLUG}-${NAME_SUFFIX}-di"
-          ACR_NAME="$(printf '%s' "${SLUG}${NAME_SUFFIX}" | cut -c1-24)acr"
           LAW_NAME="${SLUG}-${NAME_SUFFIX}-law"
           CAE_NAME="${SLUG}-${NAME_SUFFIX}-cae"
           CA_NAME="${SLUG}-${NAME_SUFFIX}-pyca"
@@ -323,10 +322,6 @@ jobs:
           import_if_needed \
             "azurerm_cognitive_account.document_intelligence" \
             "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.CognitiveServices/accounts/${DI_NAME}"
-
-          import_if_needed \
-            "azurerm_container_registry.python[0]" \
-            "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.ContainerRegistry/registries/${ACR_NAME}"
 
           import_if_needed \
             "azurerm_log_analytics_workspace.python[0]" \
@@ -380,19 +375,9 @@ jobs:
       - name: Build and push Python Docker image
         if: github.event_name == 'push' || inputs.terraform_apply
         run: |
-          SLUG="ragapp"
-          SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
-          if [ -n "${TF_VAR_name_suffix:-}" ]; then
-            NAME_SUFFIX="$(echo "$TF_VAR_name_suffix" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-8)"
-          else
-            NAME_SUFFIX="$(printf '%s' "${SUBSCRIPTION_ID}:${SLUG}" | md5sum | cut -c1-8)"
-          fi
-          ACR_NAME="$(printf '%s' "${SLUG}${NAME_SUFFIX}" | cut -c1-24)acr"
-          ACR_LOGIN_SERVER="${ACR_NAME}.azurecr.io"
-
-          az acr login --name "$ACR_NAME"
-          docker build -t "${ACR_LOGIN_SERVER}/python-backend:latest" ./backend-python
-          docker push "${ACR_LOGIN_SERVER}/python-backend:latest"
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          docker build --platform linux/amd64 -t "${{ secrets.DOCKERHUB_USERNAME }}/rag-python-backend:latest" ./backend-python
+          docker push "${{ secrets.DOCKERHUB_USERNAME }}/rag-python-backend:latest"
 
       - name: Update Container App with new image
         if: github.event_name == 'push' || inputs.terraform_apply
@@ -405,11 +390,9 @@ jobs:
             NAME_SUFFIX="$(printf '%s' "${SUBSCRIPTION_ID}:${SLUG}" | md5sum | cut -c1-8)"
           fi
           RG_NAME="${SLUG}-${NAME_SUFFIX}-rg"
-          ACR_NAME="$(printf '%s' "${SLUG}${NAME_SUFFIX}" | cut -c1-24)acr"
           CA_NAME="${SLUG}-${NAME_SUFFIX}-pyca"
-          ACR_LOGIN_SERVER="${ACR_NAME}.azurecr.io"
 
           az containerapp update \
             --name "$CA_NAME" \
             --resource-group "$RG_NAME" \
-            --image "${ACR_LOGIN_SERVER}/python-backend:latest"
+            --image "${{ secrets.DOCKERHUB_USERNAME }}/rag-python-backend:latest"
