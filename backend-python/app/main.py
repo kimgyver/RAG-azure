@@ -373,6 +373,57 @@ def extract_ocr_text(content: bytes, content_type: Optional[str]) -> str:
     return "\n".join(lines).strip()
 
 
+def _upsert_search_chunks(
+    tenant_id: str,
+    document_id: str,
+    blob_name: str,
+    file_name: str,
+    chunks: List[str],
+) -> None:
+    """Upload chunks to Azure Search index via REST API (batch upload)."""
+    endpoint = os.getenv("SEARCH_ENDPOINT", "").strip().rstrip("/")
+    api_key = os.getenv("SEARCH_API_KEY", "").strip()
+    index_name = os.getenv("SEARCH_INDEX_NAME", "rag-chunks").strip()
+
+    if not endpoint or not api_key or not chunks:
+        return
+
+    api_version = "2023-11-01"
+    batch_size = 500
+
+    for start in range(0, len(chunks), batch_size):
+        batch_chunks = chunks[start:start + batch_size]
+        docs = []
+        for idx, content in enumerate(batch_chunks):
+            global_idx = start + idx
+            docs.append({
+                "@search.action": "mergeOrUpload",
+                "id": f"{document_id}-{global_idx}",
+                "tenantId": tenant_id,
+                "documentId": document_id,
+                "blobName": blob_name,
+                "fileName": file_name,
+                "chunkIndex": global_idx,
+                "content": content,
+                "contentLength": len(content),
+                "sourceType": "python-backend",
+            })
+
+        batch = {"value": docs}
+        url = f"{endpoint}/indexes/{index_name}/docs/index?api-version={api_version}"
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(batch).encode("utf-8"),
+            headers={"api-key": api_key, "Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                resp.read()
+        except Exception:
+            pass  # best-effort; catalog will still show in-memory chunks
+
+
 def upsert_local_index(
     tenant_id: str,
     document_id: str,
@@ -384,6 +435,12 @@ def upsert_local_index(
     created_at: Optional[str] = None,
 ) -> int:
     chunks = chunk_text(text)
+
+    # Write to Azure Search index (persistent store)
+    if search_enabled():
+        _upsert_search_chunks(tenant_id, document_id, blob_name, file_name, chunks)
+
+    # Also keep in in-memory cache for fast chat/search within same process lifetime
     CHUNKS_BY_TENANT[tenant_id] = [
         chunk for chunk in CHUNKS_BY_TENANT.get(tenant_id, []) if chunk.documentId != document_id
     ]
