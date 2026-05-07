@@ -931,6 +931,63 @@ def get_document_source(document_id: str, tenantId: str = Query(...)) -> Dict[st
     }
 
 
+def _delete_search_chunks_for_document(document_id: str, tenant_id: str) -> int:
+    """Delete all Azure Search index chunks for a document via REST API. Returns count deleted."""
+    endpoint = os.getenv("SEARCH_ENDPOINT", "").strip().rstrip("/")
+    api_key = os.getenv("SEARCH_API_KEY", "").strip()
+    index_name = os.getenv("SEARCH_INDEX_NAME", "rag-chunks").strip()
+
+    if not endpoint or not api_key:
+        return 0
+
+    safe_tenant = tenant_id.replace("'", "''")
+    safe_doc = document_id.replace("'", "''")
+    odata_filter = f"tenantId eq '{safe_tenant}' and documentId eq '{safe_doc}'"
+    api_version = "2023-11-01"
+    total_deleted = 0
+
+    while True:
+        params = (
+            f"search=*"
+            f"&$filter={quote(odata_filter)}"
+            f"&$top=500&$select=id"
+            f"&api-version={api_version}"
+        )
+        list_url = f"{endpoint}/indexes/{index_name}/docs?{params}"
+        list_req = urllib.request.Request(
+            list_url, headers={"api-key": api_key, "Accept": "application/json"}
+        )
+        try:
+            with urllib.request.urlopen(list_req, timeout=15) as resp:
+                data = json.loads(resp.read())
+        except Exception:
+            break
+
+        hits = data.get("value", [])
+        if not hits:
+            break
+
+        batch = {"value": [{"@search.action": "delete", "id": doc["id"]} for doc in hits]}
+        batch_url = f"{endpoint}/indexes/{index_name}/docs/index?api-version={api_version}"
+        del_req = urllib.request.Request(
+            batch_url,
+            data=json.dumps(batch).encode("utf-8"),
+            headers={"api-key": api_key, "Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(del_req, timeout=15) as resp:
+                resp.read()
+        except Exception:
+            break
+
+        total_deleted += len(hits)
+        if len(hits) < 500:
+            break
+
+    return total_deleted
+
+
 @app.delete("/api/documents/{document_id}/purge")
 def purge_document(document_id: str, tenantId: str = Query(...)) -> Dict[str, Any]:
     validate_tenant_id(tenantId)
@@ -938,24 +995,29 @@ def purge_document(document_id: str, tenantId: str = Query(...)) -> Dict[str, An
     if not cosmos_enabled() and not search_enabled():
         raise HTTPException(status_code=503, detail="Cosmos DB and Azure AI Search are both disabled; nothing to delete.")
 
+    # Clear in-memory cache
     DOCS_BY_TENANT.get(tenantId, {}).pop(document_id, None)
-
     before = len(CHUNKS_BY_TENANT.get(tenantId, []))
     CHUNKS_BY_TENANT[tenantId] = [
         chunk for chunk in CHUNKS_BY_TENANT.get(tenantId, []) if chunk.documentId != document_id
     ]
     after = len(CHUNKS_BY_TENANT.get(tenantId, []))
 
+    # Delete from Azure Search index (the authoritative store)
+    deleted_search = _delete_search_chunks_for_document(document_id, tenantId) if search_enabled() else 0
+    deleted_search += (before - after)  # include any in-memory-only chunks
+
+    # Delete from Cosmos DB
     cosmos_deleted = delete_document_metadata(document_id, tenantId) if cosmos_enabled() else False
 
-    if before == after and not cosmos_deleted:
+    if deleted_search == 0 and not cosmos_deleted:
         raise HTTPException(status_code=404, detail="Document not found.")
 
     return {
         "documentId": document_id,
         "tenantId": tenantId,
-        "deletedSearchChunks": before - after,
-        "remainingSearchChunks": after,
+        "deletedSearchChunks": deleted_search,
+        "remainingSearchChunks": 0,
         "cosmosDeleted": cosmos_deleted,
         "note": "Blob 원본은 삭제하지 않았습니다. 스토리지에서 직접 지우려면 포털 또는 별도 작업을 사용하세요.",
     }
