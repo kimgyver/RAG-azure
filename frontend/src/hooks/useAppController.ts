@@ -92,12 +92,23 @@ function getApiBaseUrls() {
     "https://5xvuxdf5dl.execute-api.ap-southeast-2.amazonaws.com/api";
   const defaultAwsPythonBase = "http://15.134.161.145/api";
 
-  const awsBase = (
+  const configuredAwsBase = (
     import.meta.env.VITE_AWS_API_BASE_URL?.trim() || defaultAwsNodeBase
   ).replace(/\/$/, "");
-  const awsPythonBase = (
+  const configuredAwsPythonBase = (
     import.meta.env.VITE_AWS_PYTHON_API_BASE_URL?.trim() || defaultAwsPythonBase
   ).replace(/\/$/, "");
+
+  const awsBase =
+    configuredAwsBase.includes("azurewebsites.net") ||
+    configuredAwsBase.includes("azurecontainerapps.io")
+      ? defaultAwsNodeBase
+      : configuredAwsBase;
+  const awsPythonBase =
+    configuredAwsPythonBase.includes("azurewebsites.net") ||
+    configuredAwsPythonBase.includes("azurecontainerapps.io")
+      ? defaultAwsPythonBase
+      : configuredAwsPythonBase;
 
   return { nodeBase, pythonBase, awsBase, awsPythonBase };
 }
