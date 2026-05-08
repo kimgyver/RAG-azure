@@ -18,9 +18,10 @@
     "start:build": "npm run build && FUNCTIONS_WORKER_RUNTIME=node func start",
     "start:aws": "node dist/src/server-aws.js",
     "start:worker": "node dist/src/worker-aws.js",
-    "build:lambda:http": "npx esbuild src/lambda-http.ts --bundle --platform=node --target=node20 --outfile=dist-lambda/http/index.js",
-    "build:lambda:worker": "npx esbuild src/lambda-worker.ts --bundle --platform=node --target=node20 --outfile=dist-lambda/worker/index.js",
-    "build:lambda": "npm run build:lambda:http && npm run build:lambda:worker"
+    "build:lambda:http": "npx esbuild src/lambda-http.ts --bundle --platform=node --target=node20 --sourcemap=both --outfile=dist-lambda/http/index.js",
+    "build:lambda:worker": "npx esbuild src/lambda-worker.ts --bundle --platform=node --target=node20 --sourcemap=both --outfile=dist-lambda/worker/index.js",
+    "build:lambda": "npm run build:lambda:http && npm run build:lambda:worker",
+    "build:lambda:clean": "rm -rf dist-lambda/ && npm run build:lambda"
   },
   "dependencies": {
     "@azure/cosmos": "^4.5.0",
