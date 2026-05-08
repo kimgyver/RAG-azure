@@ -156,10 +156,27 @@ jobs:
             exit 0
           fi
 
+          AWS_BASE_FROM_STATE=""
+          AWS_PYTHON_BASE_FROM_STATE=""
+          if [ -f "infra/aws/terraform.tfstate" ]; then
+            AWS_BASE_FROM_STATE="$(jq -r '.outputs.node_api_url.value // empty' infra/aws/terraform.tfstate 2>/dev/null || true)"
+            AWS_PYTHON_BASE_FROM_STATE="$(jq -r '.outputs.ec2_public_ip.value // empty' infra/aws/terraform.tfstate 2>/dev/null || true)"
+
+            AWS_BASE_FROM_STATE="${AWS_BASE_FROM_STATE%/}"
+            if [ -n "$AWS_BASE_FROM_STATE" ] && [[ "$AWS_BASE_FROM_STATE" != */api ]]; then
+              AWS_BASE_FROM_STATE="$AWS_BASE_FROM_STATE/api"
+            fi
+
+            AWS_PYTHON_BASE_FROM_STATE="${AWS_PYTHON_BASE_FROM_STATE%/}"
+            if [ -n "$AWS_PYTHON_BASE_FROM_STATE" ] && [[ "$AWS_PYTHON_BASE_FROM_STATE" != */api ]]; then
+              AWS_PYTHON_BASE_FROM_STATE="$AWS_PYTHON_BASE_FROM_STATE/api"
+            fi
+          fi
+
           NODE_BASE="${NODE_API_BASE_URL_FROM_VAR:-$BASE_URL}"
           PYTHON_BASE="${PYTHON_API_BASE_URL_FROM_VAR:-$BASE_URL}"
-          AWS_BASE="${AWS_API_BASE_URL_FROM_VAR:-$BASE_URL}"
-          AWS_PYTHON_BASE="${AWS_PYTHON_API_BASE_URL_FROM_VAR:-$BASE_URL}"
+          AWS_BASE="${AWS_API_BASE_URL_FROM_VAR:-${AWS_BASE_FROM_STATE:-$BASE_URL}}"
+          AWS_PYTHON_BASE="${AWS_PYTHON_API_BASE_URL_FROM_VAR:-${AWS_PYTHON_BASE_FROM_STATE:-$BASE_URL}}"
           DEFAULT_BACKEND="${DEFAULT_BACKEND_FROM_VAR:-node}"
 
           echo "VITE_UPLOAD_API_BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
@@ -181,6 +198,9 @@ jobs:
           fi
           if [ -z "${AWS_PYTHON_API_BASE_URL_FROM_VAR:-}" ]; then
             echo "::warning::VITE_AWS_PYTHON_API_BASE_URL is not set. AWS Python frontend will fall back to ${AWS_PYTHON_BASE%/}."
+          fi
+          if [ -n "$AWS_BASE_FROM_STATE" ] || [ -n "$AWS_PYTHON_BASE_FROM_STATE" ]; then
+            echo "Derived AWS API URL(s) from infra/aws/terraform.tfstate when repository variables were missing."
           fi
       - name: Validate deploy token source
         shell: bash
