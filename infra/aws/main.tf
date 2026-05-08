@@ -424,6 +424,7 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
           "lambda:UpdateFunctionCode",
           "lambda:PublishVersion",
           "lambda:GetFunction",
+          "lambda:GetFunctionConfiguration",
         ]
         Resource = [
           aws_lambda_function.node_http.arn,
