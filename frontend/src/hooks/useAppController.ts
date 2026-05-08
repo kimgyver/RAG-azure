@@ -86,11 +86,17 @@ function getApiBaseUrls() {
   const pythonBase = (
     import.meta.env.VITE_PYTHON_API_BASE_URL?.trim() || nodeBase
   ).replace(/\/$/, "");
+
+  // Production safety defaults: AWS targets must never fall back to Azure Function URL.
+  const defaultAwsNodeBase =
+    "https://5xvuxdf5dl.execute-api.ap-southeast-2.amazonaws.com/api";
+  const defaultAwsPythonBase = "http://15.134.161.145/api";
+
   const awsBase = (
-    import.meta.env.VITE_AWS_API_BASE_URL?.trim() || nodeBase
+    import.meta.env.VITE_AWS_API_BASE_URL?.trim() || defaultAwsNodeBase
   ).replace(/\/$/, "");
   const awsPythonBase = (
-    import.meta.env.VITE_AWS_PYTHON_API_BASE_URL?.trim() || nodeBase
+    import.meta.env.VITE_AWS_PYTHON_API_BASE_URL?.trim() || defaultAwsPythonBase
   ).replace(/\/$/, "");
 
   return { nodeBase, pythonBase, awsBase, awsPythonBase };
