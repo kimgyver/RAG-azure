@@ -126,6 +126,11 @@ jobs:
         shell: bash
         env:
           API_BASE_URL_FROM_VAR: ${{ vars.VITE_API_BASE_URL }}
+          NODE_API_BASE_URL_FROM_VAR: ${{ vars.VITE_NODE_API_BASE_URL }}
+          PYTHON_API_BASE_URL_FROM_VAR: ${{ vars.VITE_PYTHON_API_BASE_URL }}
+          AWS_API_BASE_URL_FROM_VAR: ${{ vars.VITE_AWS_API_BASE_URL }}
+          AWS_PYTHON_API_BASE_URL_FROM_VAR: ${{ vars.VITE_AWS_PYTHON_API_BASE_URL }}
+          DEFAULT_BACKEND_FROM_VAR: ${{ vars.VITE_DEFAULT_BACKEND }}
         run: |
           set -euo pipefail
 
@@ -151,8 +156,32 @@ jobs:
             exit 0
           fi
 
+          NODE_BASE="${NODE_API_BASE_URL_FROM_VAR:-$BASE_URL}"
+          PYTHON_BASE="${PYTHON_API_BASE_URL_FROM_VAR:-$BASE_URL}"
+          AWS_BASE="${AWS_API_BASE_URL_FROM_VAR:-$BASE_URL}"
+          AWS_PYTHON_BASE="${AWS_PYTHON_API_BASE_URL_FROM_VAR:-$BASE_URL}"
+          DEFAULT_BACKEND="${DEFAULT_BACKEND_FROM_VAR:-node}"
+
           echo "VITE_UPLOAD_API_BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
           echo "VITE_API_BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
+          echo "VITE_NODE_API_BASE_URL=${NODE_BASE%/}" >> "$GITHUB_ENV"
+          echo "VITE_PYTHON_API_BASE_URL=${PYTHON_BASE%/}" >> "$GITHUB_ENV"
+          echo "VITE_AWS_API_BASE_URL=${AWS_BASE%/}" >> "$GITHUB_ENV"
+          echo "VITE_AWS_PYTHON_API_BASE_URL=${AWS_PYTHON_BASE%/}" >> "$GITHUB_ENV"
+          echo "VITE_DEFAULT_BACKEND=${DEFAULT_BACKEND}" >> "$GITHUB_ENV"
+
+          echo "Resolved frontend API targets:"
+          echo "  node=${NODE_BASE%/}"
+          echo "  python=${PYTHON_BASE%/}"
+          echo "  aws=${AWS_BASE%/}"
+          echo "  aws-python=${AWS_PYTHON_BASE%/}"
+
+          if [ -z "${AWS_API_BASE_URL_FROM_VAR:-}" ]; then
+            echo "::warning::VITE_AWS_API_BASE_URL is not set. AWS frontend will fall back to ${AWS_BASE%/}."
+          fi
+          if [ -z "${AWS_PYTHON_API_BASE_URL_FROM_VAR:-}" ]; then
+            echo "::warning::VITE_AWS_PYTHON_API_BASE_URL is not set. AWS Python frontend will fall back to ${AWS_PYTHON_BASE%/}."
+          fi
       - name: Validate deploy token source
         shell: bash
         env:
