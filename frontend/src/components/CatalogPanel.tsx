@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import type { CatalogDocumentRow, RuntimeConfigSnapshot } from "../types/app";
+import type {
+  BackendTarget,
+  CatalogDocumentRow,
+  RuntimeConfigSnapshot
+} from "../types/app";
 import type { DocumentSourceResponse } from "../types/app";
+import { BACKEND_RESOURCE_LABELS } from "../utils/app";
 
 type CatalogPanelProps = {
   loadCatalog: () => Promise<void>;
@@ -13,6 +18,7 @@ type CatalogPanelProps = {
   purgeBusyId: string | null;
   onPurgeDocument: (documentId: string) => Promise<void>;
   onViewDocumentSource: (documentId: string) => Promise<DocumentSourceResponse>;
+  backendTarget: BackendTarget;
 };
 
 export function CatalogPanel({
@@ -24,12 +30,16 @@ export function CatalogPanel({
   catalogRows,
   purgeBusyId,
   onPurgeDocument,
-  onViewDocumentSource
+  onViewDocumentSource,
+  backendTarget
 }: CatalogPanelProps) {
   const [sourceLoadingId, setSourceLoadingId] = useState<string | null>(null);
   const [sourceView, setSourceView] = useState<DocumentSourceResponse | null>(
     null
   );
+  const resourceLabels = BACKEND_RESOURCE_LABELS[backendTarget];
+  const storeLabel = resourceLabels.metadataLabel;
+  const searchLabel = resourceLabels.searchLabel;
 
   const handleViewSource = async (documentId: string) => {
     setSourceLoadingId(documentId);
@@ -50,7 +60,9 @@ export function CatalogPanel({
       <div className="panel-header">
         <div>
           <p className="panel-kicker">Admin</p>
-          <h2 id="catalog-heading">Cosmos · Search document catalog</h2>
+          <h2 id="catalog-heading">
+            {storeLabel} · {searchLabel} document catalog
+          </h2>
         </div>
         <div className="catalog-actions">
           <button type="button" onClick={() => void loadCatalog()}>
@@ -64,14 +76,14 @@ export function CatalogPanel({
         } ${catalogStatus === "ok" ? "catalog-ok" : ""}`}
       >
         {catalogStatus === "loading"
-          ? "Loading catalog…"
+          ? `Reading ${storeLabel} and ${searchLabel}…`
           : catalogMessage || "Merged rows for the current tenant."}
       </p>
       {runtimeConfigStatus === "ok" && runtimeConfig ? (
         <p className="catalog-mode-note">
           {runtimeConfig.cosmosDbEnabled
-            ? "Cosmos metadata is active. Upload status and catalog rows are persisted in Cosmos and merged with Search chunks below."
-            : "Cosmos metadata is off. Catalog rows below come from Search only until Cosmos is enabled."}
+            ? `${storeLabel} metadata is active. Upload status and catalog rows are persisted in ${storeLabel} and merged with ${searchLabel} chunks below.`
+            : `${storeLabel} metadata is off. Catalog rows below come from ${searchLabel} only until ${storeLabel} is enabled.`}
         </p>
       ) : null}
       <div className="catalog-table-wrap">
@@ -80,83 +92,100 @@ export function CatalogPanel({
             <tr>
               <th scope="col">documentId</th>
               <th scope="col">File</th>
-              <th scope="col">Cosmos</th>
-              <th scope="col">Search chunks</th>
+              <th scope="col">{storeLabel}</th>
+              <th scope="col">{searchLabel} chunks</th>
               <th scope="col">Source</th>
               <th scope="col">Delete</th>
             </tr>
           </thead>
           <tbody>
-            {catalogRows.length === 0 && catalogStatus === "ok" ? (
+            {catalogStatus === "loading" ? (
+              <tr>
+                <td colSpan={6} className="catalog-empty">
+                  Loading catalog…
+                </td>
+              </tr>
+            ) : catalogRows.length === 0 && catalogStatus === "ok" ? (
               <tr>
                 <td colSpan={6} className="catalog-empty">
                   No documents for this tenant. Upload files or switch tenant.
                 </td>
               </tr>
             ) : null}
-            {catalogRows.map(row => (
-              <tr key={row.documentId}>
-                <td className="mono">{row.documentId}</td>
-                <td>{row.fileName}</td>
-                <td>
-                  {row.cosmos ? (
-                    <>
-                      {row.cosmos.status}
-                      <br />
-                      <small className="catalog-sub">
-                        {row.cosmos.chunkCount != null
-                          ? `${row.cosmos.chunkCount} chunks · `
-                          : ""}
-                        {row.cosmos.updatedAt?.slice(0, 19) ?? ""}
-                      </small>
-                    </>
-                  ) : (
-                    <span className="muted">—</span>
-                  )}
-                </td>
-                <td>
-                  {row.search ? (
-                    <>{row.search.chunkCount} chunks</>
-                  ) : (
-                    <span className="muted">—</span>
-                  )}
-                </td>
-                <td>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    disabled={
-                      !row.cosmos?.hasSourceText || sourceLoadingId !== null
-                    }
-                    onClick={() => void handleViewSource(row.documentId)}
-                  >
-                    {sourceLoadingId === row.documentId
-                      ? "Loading…"
-                      : "View source"}
-                  </button>
-                </td>
-                <td>
-                  <button
-                    type="button"
-                    className="btn-danger"
-                    disabled={
-                      purgeBusyId !== null || (!row.cosmos && !row.search)
-                    }
-                    onClick={() => void onPurgeDocument(row.documentId)}
-                  >
-                    {purgeBusyId === row.documentId
-                      ? "Deleting…"
-                      : "Purge index data"}
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {catalogStatus !== "loading" &&
+              catalogRows.map(row => (
+                <tr key={row.documentId}>
+                  {(() => {
+                    const metadata = row.cosmos ?? row.dynamo ?? null;
+                    return (
+                      <>
+                        <td className="mono">{row.documentId}</td>
+                        <td>{row.fileName}</td>
+                        <td>
+                          {metadata ? (
+                            <>
+                              {metadata.status}
+                              <br />
+                              <small className="catalog-sub">
+                                {metadata.chunkCount != null
+                                  ? `${metadata.chunkCount} chunks · `
+                                  : ""}
+                                {metadata.updatedAt?.slice(0, 19) ?? ""}
+                              </small>
+                            </>
+                          ) : (
+                            <span className="muted">—</span>
+                          )}
+                        </td>
+                        <td>
+                          {row.search ? (
+                            <>{row.search.chunkCount} chunks</>
+                          ) : (
+                            <span className="muted">—</span>
+                          )}
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            disabled={
+                              !metadata?.hasSourceText ||
+                              sourceLoadingId !== null
+                            }
+                            onClick={() =>
+                              void handleViewSource(row.documentId)
+                            }
+                          >
+                            {sourceLoadingId === row.documentId
+                              ? "Loading…"
+                              : "View source"}
+                          </button>
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn-danger"
+                            disabled={
+                              purgeBusyId !== null || (!metadata && !row.search)
+                            }
+                            onClick={() => void onPurgeDocument(row.documentId)}
+                          >
+                            {purgeBusyId === row.documentId
+                              ? "Deleting…"
+                              : "Purge index data"}
+                          </button>
+                        </td>
+                      </>
+                    );
+                  })()}
+                </tr>
+              ))}
           </tbody>
         </table>
       </div>
       <p className="catalog-footnote">
-        Purge removes AI Search chunks and Cosmos metadata only. Blobs in
-        storage are not deleted.
+        Purge removes {searchLabel} chunks and {storeLabel} metadata only.
+        Objects in storage are not deleted.
       </p>
 
       {sourceView

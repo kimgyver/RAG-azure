@@ -24,7 +24,7 @@
 # extra_app_settings = {
 #   BLOB_TRIGGER_SOURCE = "EventGrid"
 # }
-# allowed_tenant_ids = ["tenant-a", "tenant-b"]
+# allowed_tenant_ids = ["tenant-azure-1", "tenant-azure-2"]
 # enable_chat_alerts = true
 # chat_alert_email_receivers = ["ops@example.com"]
 # chat_failure_count_threshold = 3

@@ -1,7 +1,13 @@
 import type { FormEvent } from "react";
-import type { ChatMessage, RuntimeConfigSnapshot } from "../types/app";
+import type {
+  BackendTarget,
+  ChatMessage,
+  RuntimeConfigSnapshot
+} from "../types/app";
+import { BACKEND_RESOURCE_LABELS } from "../utils/app";
 
 type ChatPanelProps = {
+  backendTarget: BackendTarget;
   runtimeConfigStatus: "loading" | "ok" | "error";
   runtimeConfig: RuntimeConfigSnapshot | null;
   searchOnlyMode: boolean;
@@ -13,6 +19,7 @@ type ChatPanelProps = {
 };
 
 export function ChatPanel({
+  backendTarget,
   runtimeConfigStatus,
   runtimeConfig,
   searchOnlyMode,
@@ -22,6 +29,7 @@ export function ChatPanel({
   onSendChat,
   onChatInputChange
 }: ChatPanelProps) {
+  const resourceLabels = BACKEND_RESOURCE_LABELS[backendTarget];
   return (
     <section className="panel panel-chat">
       <div className="panel-header">
@@ -29,7 +37,9 @@ export function ChatPanel({
           <p className="panel-kicker">Chat</p>
           <h2>RAG chatbot</h2>
         </div>
-        <span className="panel-tag">Tenant-scoped search</span>
+        <span className="panel-tag">
+          Tenant-scoped {resourceLabels.searchLabel}
+        </span>
       </div>
 
       {runtimeConfigStatus === "ok" && runtimeConfig ? (
@@ -43,8 +53,8 @@ export function ChatPanel({
           </strong>
           <p>
             {searchOnlyMode
-              ? "This is not an error. The assistant is answering from Azure AI Search results because no OpenAI credential is configured yet."
-              : "Search results are retrieved first and then condensed into a model-generated answer."}
+              ? `This is not an error. The assistant is answering from ${resourceLabels.searchLabel} results because no OpenAI credential is configured yet.`
+              : `${resourceLabels.searchLabel} results are retrieved first and then condensed into a model-generated answer.`}
           </p>
         </div>
       ) : null}
@@ -103,8 +113,9 @@ export function ChatPanel({
         />
         <div className="composer-actions">
           <div className="composer-hint">
-            Search always runs first. The runtime flag above decides whether the
-            final answer is search-only or model-generated.
+            {resourceLabels.searchLabel} retrieval always runs first. The
+            runtime flag above decides whether the final answer is search-only
+            or model-generated.
           </div>
           <button type="submit" disabled={chatPending || !chatInput.trim()}>
             {chatPending ? "Working…" : "Send question"}

@@ -12,12 +12,12 @@ try:
 except Exception:  # pragma: no cover
     PdfReader = None  # type: ignore
 
-from .config import cosmos_enabled, search_enabled, utc_now_iso
+from .config import active_search_enabled, storage_container_name, utc_now_iso
 from .models import ChunkRecord, DocumentRecord, CHUNKS_BY_TENANT, DOCS_BY_TENANT
-from .cosmos import list_documents_by_tenant, upsert_document_metadata
 from .storage import get_blob_service_client, is_image_blob, is_pdf_blob, is_text_blob
 from .search import upsert_search_chunks
 from .ocr import extract_ocr_text, ocr_service_configured
+from .providers import get_storage_provider, get_document_store, get_search_store, get_ocr_provider
 
 
 # ---------------------------------------------------------------------------
@@ -77,8 +77,9 @@ def upsert_local_index(
     chunks = chunk_text(text)
 
     # Write to Azure Search only for new indexing — not on hydration (read-only reload)
-    if write_to_search and search_enabled():
-        upsert_search_chunks(tenant_id, document_id, blob_name, file_name, chunks)
+    if write_to_search and active_search_enabled():
+        search = get_search_store()
+        search.upsert_chunks(tenant_id, document_id, blob_name, file_name, chunks)
 
     # Refresh in-memory chunk list for this document
     CHUNKS_BY_TENANT[tenant_id] = [
@@ -133,20 +134,19 @@ def process_queued_document(record: Dict[str, Any]) -> bool:
     if not tenant_id or not document_id or not blob_name:
         return False
 
-    container_name = os.getenv("AZURE_STORAGE_CONTAINER_NAME", "uploads").strip() or "uploads"
+    container_name = storage_container_name()
+    document_store = get_document_store()
 
     try:
-        blob_service = get_blob_service_client()
-        blob_client = blob_service.get_container_client(container_name).get_blob_client(blob_name)
-        props = blob_client.get_blob_properties()
-        content_type = props.content_settings.content_type if props and props.content_settings else None
+        storage = get_storage_provider()
+        content_type = storage.get_blob_content_type(container_name, blob_name)
     except ResourceNotFoundError:
         return False  # upload not yet complete
     except Exception:
         return False
 
     if not is_text_blob(blob_name, content_type) and not is_pdf_blob(blob_name, content_type) and not is_image_blob(blob_name, content_type):
-        upsert_document_metadata({
+        document_store.upsert({
             "documentId": document_id,
             "tenantId": tenant_id,
             "blobName": blob_name,
@@ -158,20 +158,23 @@ def process_queued_document(record: Dict[str, Any]) -> bool:
 
     source_type = "text"
     try:
-        content = blob_client.download_blob().readall()
+        storage = get_storage_provider()
+        content = storage.download_blob(container_name, blob_name)
         if is_pdf_blob(blob_name, content_type):
             source_type = "pdf"
             text = extract_pdf_text(content)
             if not text:
                 source_type = "pdf-ocr"
-                text = extract_ocr_text(content, content_type)
+                ocr = get_ocr_provider()
+                text = ocr.extract_text(content, content_type)
         elif is_image_blob(blob_name, content_type):
             source_type = "image-ocr"
-            text = extract_ocr_text(content, content_type)
+            ocr = get_ocr_provider()
+            text = ocr.extract_text(content, content_type)
         else:
             text = content.decode("utf-8", errors="ignore").strip()
     except Exception:
-        upsert_document_metadata({
+        document_store.upsert({
             "documentId": document_id,
             "tenantId": tenant_id,
             "blobName": blob_name,
@@ -183,9 +186,9 @@ def process_queued_document(record: Dict[str, Any]) -> bool:
 
     if not text:
         error_message = "No extractable text found in document."
-        if is_image_blob(blob_name, content_type) and not ocr_service_configured():
+        if is_image_blob(blob_name, content_type) and not get_ocr_provider().is_configured():
             error_message = "OCR service is not configured for image documents."
-        upsert_document_metadata({
+        document_store.upsert({
             "documentId": document_id,
             "tenantId": tenant_id,
             "blobName": blob_name,
@@ -207,7 +210,7 @@ def process_queued_document(record: Dict[str, Any]) -> bool:
         created_at=record.get("createdAt"),
         write_to_search=True,
     )
-    upsert_document_metadata({
+    document_store.upsert({
         "documentId": document_id,
         "tenantId": tenant_id,
         "blobName": blob_name,
@@ -222,18 +225,16 @@ def process_queued_document(record: Dict[str, Any]) -> bool:
 
 
 def process_queued_documents_for_tenant(tenant_id: str) -> None:
-    if not cosmos_enabled():
-        return
-    for doc in list_documents_by_tenant(tenant_id, 300):
+    document_store = get_document_store()
+    for doc in document_store.list_by_tenant(tenant_id, 300):
         process_queued_document(doc)
 
 
 def hydrate_indexed_documents_for_tenant(tenant_id: str) -> None:
     """Reload already-indexed documents from Cosmos into the in-memory cache (no Search writes)."""
-    if not cosmos_enabled():
-        return
+    document_store = get_document_store()
     already_indexed: Set[str] = {c.documentId for c in CHUNKS_BY_TENANT.get(tenant_id, [])}
-    for doc in list_documents_by_tenant(tenant_id, 300):
+    for doc in document_store.list_by_tenant(tenant_id, 300):
         document_id = (doc.get("documentId") or doc.get("id") or "").strip()
         status = (doc.get("status") or "").strip().lower()
         source_text = (doc.get("sourceText") or "").strip()

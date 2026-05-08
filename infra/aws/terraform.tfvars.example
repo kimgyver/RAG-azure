@@ -1,0 +1,21 @@
+# Copy this file to terraform.tfvars and fill in your values
+# cp terraform.tfvars.example terraform.tfvars
+
+project_name = "ragdemo"
+region       = "ap-southeast-2"
+environment  = "dev"
+
+openai_api_key = "sk-..."   # replace with your key
+
+# GitHub repo for OIDC (format: org/repo — e.g. "jinyoungkim/RAG-azure")
+github_repo = "your-github-org/RAG-azure"
+
+# opensearch_instance_type  = "t3.small.search"
+# opensearch_instance_count = 1
+
+# ecs_cpu    = 512
+# ecs_memory = 1024
+
+# container_image = "123456789.dkr.ecr.ap-southeast-2.amazonaws.com/ragdemo-dev-backend:latest"
+
+# allowed_tenant_ids = "tenant-aws-1,tenant-aws-2"

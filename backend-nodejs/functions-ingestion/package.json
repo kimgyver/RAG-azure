@@ -15,19 +15,36 @@
     "start": "FUNCTIONS_WORKER_RUNTIME=node func start",
     "start:7072": "FUNCTIONS_WORKER_RUNTIME=node func start --port 7072",
     "start:verbose": "FUNCTIONS_WORKER_RUNTIME=node func start --verbose",
-    "start:build": "npm run build && FUNCTIONS_WORKER_RUNTIME=node func start"
+    "start:build": "npm run build && FUNCTIONS_WORKER_RUNTIME=node func start",
+    "start:aws": "node dist/src/server-aws.js",
+    "start:worker": "node dist/src/worker-aws.js",
+    "build:lambda:http": "npx esbuild src/lambda-http.ts --bundle --platform=node --target=node20 --outfile=dist-lambda/http/index.js",
+    "build:lambda:worker": "npx esbuild src/lambda-worker.ts --bundle --platform=node --target=node20 --outfile=dist-lambda/worker/index.js",
+    "build:lambda": "npm run build:lambda:http && npm run build:lambda:worker"
   },
   "dependencies": {
     "@azure/cosmos": "^4.5.0",
     "@azure/functions": "^4.5.0",
     "@azure/search-documents": "^12.1.0",
     "@azure/storage-blob": "^12.25.0",
+    "@aws-sdk/client-dynamodb": "^3.0.0",
+    "@aws-sdk/client-s3": "^3.0.0",
+    "@aws-sdk/client-sqs": "^3.0.0",
+    "@aws-sdk/credential-provider-node": "^3.0.0",
+    "@aws-sdk/s3-request-presigner": "^3.0.0",
+    "@aws-sdk/util-dynamodb": "^3.0.0",
+    "@opensearch-project/opensearch": "^2.5.0",
+    "express": "^4.19.2",
     "jimp": "^1.6.1",
     "openai": "^6.34.0",
     "pdf-parse": "^1.1.1",
-    "tesseract.js": "^5.1.1"
+    "tesseract.js": "^5.1.1",
+    "serverless-http": "^3.2.0"
   },
   "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/aws-lambda": "^8.10.0",
+    "esbuild": "^0.21.0",
     "@types/node": "^22.10.2",
     "typescript": "^5.6.3"
   }

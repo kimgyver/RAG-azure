@@ -111,7 +111,7 @@
 ### 5.1 API 헬스
 
 - `GET /api/flags/deployment` 응답 확인
-- `GET /api/documents/catalog?tenantId=tenant-a` 응답 확인
+- `GET /api/documents/catalog?tenantId=tenant-azure-1` 또는 `tenant-aws-1` 응답 확인
 
 ### 5.2 업로드/처리
 

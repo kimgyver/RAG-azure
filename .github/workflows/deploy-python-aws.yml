@@ -1,0 +1,113 @@
+name: Deploy Python Backend to AWS (EC2 + Docker)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend-python/**"
+      - "scripts/ec2-deploy.sh"
+      - ".github/workflows/deploy-python-aws.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy EC2
+    runs-on: ubuntu-latest
+    env:
+      TF_PREFIX: ragdemo-dev
+      AWS_REGION: ${{ vars.AWS_REGION }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push backend image
+        env:
+          IMAGE: ${{ steps.ecr.outputs.registry }}/${{ env.TF_PREFIX }}-backend:${{ github.sha }}
+        run: |
+          docker build --platform linux/amd64 -t "$IMAGE" backend-python/
+          docker push "$IMAGE"
+          docker tag "$IMAGE" "${{ steps.ecr.outputs.registry }}/${{ env.TF_PREFIX }}-backend:latest"
+          docker push "${{ steps.ecr.outputs.registry }}/${{ env.TF_PREFIX }}-backend:latest"
+
+      - name: Resolve EC2 instance id
+        id: ec2
+        run: |
+          INSTANCE_ID=$(aws ec2 describe-instances \
+            --region "${AWS_REGION}" \
+            --filters "Name=tag:Name,Values=${TF_PREFIX}-backend" "Name=instance-state-name,Values=running" \
+            --query "Reservations[0].Instances[0].InstanceId" \
+            --output text)
+
+          if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
+            echo "::error::Could not find running EC2 instance tagged '${TF_PREFIX}-backend'"
+            exit 1
+          fi
+
+          echo "instance_id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
+          echo "Using EC2 instance: $INSTANCE_ID"
+
+      - name: Trigger EC2 redeploy via SSM
+        id: ssm
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          PARAMS=$(printf '{"commands":["cd /opt/ragbackend","aws ecr get-login-password --region %s | docker login --username AWS --password-stdin %s.dkr.ecr.%s.amazonaws.com","docker compose pull","docker compose up -d --remove-orphans","docker image prune -f"]}' \
+            "$AWS_REGION" "$ACCOUNT_ID" "$AWS_REGION")
+
+          COMMAND_ID=$(aws ssm send-command \
+            --region "$AWS_REGION" \
+            --instance-ids "${{ steps.ec2.outputs.instance_id }}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters "$PARAMS" \
+            --query "Command.CommandId" \
+            --output text)
+
+          echo "command_id=$COMMAND_ID" >> "$GITHUB_OUTPUT"
+          echo "SSM command id: $COMMAND_ID"
+
+      - name: Wait for EC2 deploy completion
+        run: |
+          aws ssm wait command-executed \
+            --region "$AWS_REGION" \
+            --command-id "${{ steps.ssm.outputs.command_id }}" \
+            --instance-id "${{ steps.ec2.outputs.instance_id }}"
+
+          STATUS=$(aws ssm get-command-invocation \
+            --region "$AWS_REGION" \
+            --command-id "${{ steps.ssm.outputs.command_id }}" \
+            --instance-id "${{ steps.ec2.outputs.instance_id }}" \
+            --query "Status" \
+            --output text)
+
+          echo "Deploy status: $STATUS"
+          if [ "$STATUS" != "Success" ]; then
+            echo "::error::EC2 deploy failed. Printing SSM stderr:"
+            aws ssm get-command-invocation \
+              --region "$AWS_REGION" \
+              --command-id "${{ steps.ssm.outputs.command_id }}" \
+              --instance-id "${{ steps.ec2.outputs.instance_id }}" \
+              --query "StandardErrorContent" \
+              --output text
+            exit 1
+          fi
+
+      - name: Show backend health endpoint
+        run: |
+          EC2_IP=$(aws ec2 describe-instances \
+            --region "$AWS_REGION" \
+            --instance-ids "${{ steps.ec2.outputs.instance_id }}" \
+            --query "Reservations[0].Instances[0].PublicIpAddress" \
+            --output text)
+          echo "Backend health endpoint: http://${EC2_IP}/api/health"

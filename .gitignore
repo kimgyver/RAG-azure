@@ -42,3 +42,6 @@ override.tf.json
 
 # Terraform variable files with secrets
 infra/terraform.tfvars
+infra/aws/terraform.tfvars
+
+*.zip

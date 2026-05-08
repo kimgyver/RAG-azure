@@ -147,8 +147,12 @@ This section is written so a reviewer can follow and operate the app without sou
 
 ### 3.2 Set tenant context first
 
-1. In Tenant ID, enter your tenant value (example: tenant-a).
-2. Verify the effective tenant value shown next to the arrow.
+1. In Tenant ID, select a tenant from the dropdown.
+2. Use an allowed tenant for your selected backend profile:
+
+- Azure backends: tenant-azure-1, tenant-azure-2
+- AWS backends: tenant-aws-1, tenant-aws-2
+
 3. Keep this in mind:
 
 - The same tenant is applied to upload path, indexing, chat retrieval, catalog, and purge.

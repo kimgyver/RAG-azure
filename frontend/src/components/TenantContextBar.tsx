@@ -1,9 +1,11 @@
 import type { BackendTarget } from "../types/app";
+import {
+  BACKEND_RESOURCE_LABELS,
+  TENANT_OPTIONS_BY_BACKEND
+} from "../utils/app";
 
 type TenantContextBarProps = {
   tenantId: string;
-  effectiveTenantId: string;
-  defaultTenantId: string;
   backendTarget: BackendTarget;
   backendApiBaseUrl: string;
   tenantError: string;
@@ -13,37 +15,17 @@ type TenantContextBarProps = {
 
 export function TenantContextBar({
   tenantId,
-  effectiveTenantId,
-  defaultTenantId,
   backendTarget,
   backendApiBaseUrl,
   tenantError,
   onTenantIdChange,
   onBackendTargetChange
 }: TenantContextBarProps) {
+  const tenantOptions = TENANT_OPTIONS_BY_BACKEND[backendTarget];
+  const resourceLabels = BACKEND_RESOURCE_LABELS[backendTarget];
   return (
     <div className="tenant-context-bar">
       <div className="tenant-context-row">
-        <label className="tenant-context-label" htmlFor="tenant-id">
-          Tenant ID
-        </label>
-        <input
-          id="tenant-id"
-          className="tenant-context-input"
-          type="text"
-          value={tenantId}
-          onChange={event => onTenantIdChange(event.target.value)}
-          placeholder={defaultTenantId}
-          spellCheck={false}
-          autoComplete="off"
-          aria-describedby="tenant-context-desc"
-        />
-        <span className="tenant-context-sep" aria-hidden="true">
-          →
-        </span>
-        <code className="tenant-context-id" title="Value sent to the API">
-          {effectiveTenantId}
-        </code>
         <label className="tenant-context-label" htmlFor="backend-target">
           Backend
         </label>
@@ -52,13 +34,39 @@ export function TenantContextBar({
           className="backend-target-select"
           value={backendTarget}
           onChange={event => {
-            const value = event.target.value === "python" ? "python" : "node";
+            const v = event.target.value;
+            const value: import("../types/app").BackendTarget =
+              v === "python"
+                ? "python"
+                : v === "aws"
+                  ? "aws"
+                  : v === "aws-python"
+                    ? "aws-python"
+                    : "node";
             onBackendTargetChange(value);
           }}
           aria-label="Select backend runtime"
         >
-          <option value="node">Node (Functions)</option>
-          <option value="python">Python (Web App / Container App)</option>
+          <option value="node">Azure · Node (Functions)</option>
+          <option value="python">Azure · Python (Container App)</option>
+          <option value="aws">AWS · Node (Lambda)</option>
+          <option value="aws-python">AWS · Python (EC2 + Docker)</option>
+        </select>
+        <label className="tenant-context-label" htmlFor="tenant-id">
+          Tenant ID
+        </label>
+        <select
+          id="tenant-id"
+          className="tenant-context-input"
+          value={tenantId}
+          onChange={event => onTenantIdChange(event.target.value)}
+          aria-describedby="tenant-context-desc"
+        >
+          {tenantOptions.map(t => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
         </select>
       </div>
       {tenantError ? (
@@ -67,8 +75,9 @@ export function TenantContextBar({
         </p>
       ) : null}
       <p id="tenant-context-desc" className="tenant-context-desc">
-        All operations (upload, search, chat) are isolated by tenant. Leave
-        blank to use default. Active API: {backendApiBaseUrl}
+        Tenant access is restricted to the selected backend profile. Active
+        resources: {resourceLabels.storageLabel}, {resourceLabels.metadataLabel}
+        , {resourceLabels.searchLabel}. API: {backendApiBaseUrl}
       </p>
     </div>
   );

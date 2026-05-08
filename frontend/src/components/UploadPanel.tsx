@@ -1,12 +1,15 @@
 import type { ChangeEvent } from "react";
 import {
   statusLabel,
+  type BackendTarget,
   type DocumentItem,
   type TextIngestState,
   type UploadState
 } from "../types/app";
+import { BACKEND_RESOURCE_LABELS } from "../utils/app";
 
 type UploadPanelProps = {
+  backendTarget: BackendTarget;
   onFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onStartUpload: () => void;
   uploadState: UploadState;
@@ -24,6 +27,7 @@ type UploadPanelProps = {
 };
 
 export function UploadPanel({
+  backendTarget,
   onFileChange,
   onStartUpload,
   uploadState,
@@ -39,6 +43,7 @@ export function UploadPanel({
   onTextContentChange,
   onRegisterTextKnowledge
 }: UploadPanelProps) {
+  const resourceLabels = BACKEND_RESOURCE_LABELS[backendTarget];
   return (
     <section className="panel panel-upload">
       <div className="panel-header">
@@ -46,7 +51,7 @@ export function UploadPanel({
           <p className="panel-kicker">Upload</p>
           <h2>Document upload</h2>
         </div>
-        <span className="panel-tag">SAS direct upload</span>
+        <span className="panel-tag">{resourceLabels.uploadFlowLabel}</span>
       </div>
 
       <label className="dropzone" htmlFor="file-upload">
@@ -54,9 +59,10 @@ export function UploadPanel({
         <span className="dropzone-icon">+</span>
         <strong>Choose PDF, PNG, or JPG</strong>
         <p>
-          After you start upload, the app requests a SAS URL and the browser
-          PUTs the file to Blob Storage. PNG and JPEG can be OCRd on the server
-          for text.
+          After you start upload, the app requests a{" "}
+          {resourceLabels.uploadUrlLabel} and the browser PUTs the file to{" "}
+          {resourceLabels.storageLabel}. PNG and JPEG can be OCRd on the server
+          for text extraction.
         </p>
       </label>
 
@@ -69,7 +75,7 @@ export function UploadPanel({
 
       <div className="upload-meta-grid">
         <div className="meta-card">
-          <span>Blob path prefix</span>
+          <span>{resourceLabels.storagePathLabel}</span>
           <strong>{effectiveTenantId}/YYYY/MM/</strong>
         </div>
         <div className="meta-card">
@@ -80,16 +86,20 @@ export function UploadPanel({
 
       <div className="timeline-card">
         <div className="timeline-header">
-          <h3>Processing status</h3>
-          <span>Recent uploads</span>
+          <h3>Processing status history</h3>
+          <span>{resourceLabels.backendLabel}</span>
         </div>
+        <p className="upload-hint upload-idle">Tenant: {effectiveTenantId}</p>
 
         <ul className="document-list">
           {documents.map(item => (
             <li key={item.id} className="document-row">
               <div>
                 <strong>{item.fileName}</strong>
-                <p>{item.updatedAt}</p>
+                <p>
+                  {item.updatedAt} · tenant:{" "}
+                  {item.tenantId ?? effectiveTenantId}
+                </p>
               </div>
               <span className={`status-pill status-${item.status}`}>
                 {statusLabel[item.status]}

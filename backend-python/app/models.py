@@ -52,6 +52,12 @@ class CreateUploadRequest(BaseModel):
     contentType: Optional[str] = None
 
 
+class ConfirmUploadRequest(BaseModel):
+    tenantId: str
+    documentId: str
+    blobName: str
+
+
 # Process-level in-memory cache (cleared on container restart)
 DOCS_BY_TENANT: Dict[str, Dict[str, DocumentRecord]] = defaultdict(dict)
 CHUNKS_BY_TENANT: Dict[str, List[ChunkRecord]] = defaultdict(list)

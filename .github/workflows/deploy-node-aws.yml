@@ -1,0 +1,71 @@
+name: Deploy Node.js Backend to AWS (Lambda)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend-nodejs/**"
+      - ".github/workflows/deploy-node-aws.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy Lambda
+    runs-on: ubuntu-latest
+    env:
+      TF_PREFIX: ragdemo-dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: backend-nodejs/functions-ingestion/package-lock.json
+
+      - name: Install dependencies
+        working-directory: backend-nodejs/functions-ingestion
+        run: npm ci --ignore-scripts
+
+      - name: Bundle Lambda (esbuild)
+        working-directory: backend-nodejs/functions-ingestion
+        run: npm run build:lambda
+
+      - name: Package ZIPs
+        working-directory: backend-nodejs/functions-ingestion/dist-lambda
+        run: |
+          (cd http   && zip -r ../http.zip .)
+          (cd worker && zip -r ../worker.zip .)
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Deploy HTTP Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name "${{ env.TF_PREFIX }}-node-http" \
+            --zip-file fileb://backend-nodejs/functions-ingestion/dist-lambda/http.zip \
+            --region "${{ vars.AWS_REGION }}"
+
+      - name: Deploy Worker Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name "${{ env.TF_PREFIX }}-node-worker" \
+            --zip-file fileb://backend-nodejs/functions-ingestion/dist-lambda/worker.zip \
+            --region "${{ vars.AWS_REGION }}"
+
+      - name: Wait for updates
+        run: |
+          aws lambda wait function-updated \
+            --function-name "${{ env.TF_PREFIX }}-node-http" \
+            --region "${{ vars.AWS_REGION }}"
+          aws lambda wait function-updated \
+            --function-name "${{ env.TF_PREFIX }}-node-worker" \
+            --region "${{ vars.AWS_REGION }}"

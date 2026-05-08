@@ -1,0 +1,113 @@
+name: CI - Build Frontend and 4 Backends
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend-build:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+  azure-node-backend-build:
+    name: Azure Node Backend Build (Functions)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: backend-nodejs/functions-ingestion/package-lock.json
+
+      - name: Install Node backend dependencies
+        working-directory: backend-nodejs/functions-ingestion
+        run: npm ci --ignore-scripts
+
+      - name: Build Node backend (Functions)
+        working-directory: backend-nodejs/functions-ingestion
+        run: npm run build
+
+  aws-node-backend-build:
+    name: AWS Node Backend Build (Lambda)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: backend-nodejs/functions-ingestion/package-lock.json
+
+      - name: Install Node backend dependencies
+        working-directory: backend-nodejs/functions-ingestion
+        run: npm ci --ignore-scripts
+
+      - name: Build Node backend (Lambda bundles)
+        working-directory: backend-nodejs/functions-ingestion
+        run: npm run build:lambda
+
+  azure-python-backend-build:
+    name: Azure Python Backend Build (Container App + Docker)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python backend dependencies
+        working-directory: backend-python
+        run: pip install -r requirements.txt
+
+      - name: Python syntax check
+        working-directory: backend-python
+        run: python -m py_compile app/main.py
+
+      - name: Build Python backend Docker image (Azure target)
+        run: docker build -t rag-python-backend-azure-ci:latest backend-python
+
+  aws-python-backend-build:
+    name: AWS Python Backend Build (EC2 + Docker)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python backend dependencies
+        working-directory: backend-python
+        run: pip install -r requirements.txt
+
+      - name: Python syntax check
+        working-directory: backend-python
+        run: python -m py_compile app/main.py
+
+      - name: Build Python backend Docker image (AWS target)
+        run: docker build -t rag-python-backend-aws-ci:latest backend-python

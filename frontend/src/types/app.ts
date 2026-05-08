@@ -99,7 +99,7 @@ export type RuntimeConfigSnapshot = {
   tenantAllowlistActive: boolean;
 };
 
-export type BackendTarget = "node" | "python";
+export type BackendTarget = "node" | "python" | "aws" | "aws-python";
 
 export type CatalogCosmos = {
   status: string;
@@ -122,6 +122,7 @@ export type CatalogDocumentRow = {
   fileName: string;
   blobName: string;
   cosmos: CatalogCosmos | null;
+  dynamo?: CatalogCosmos | null;
   search: CatalogSearch | null;
 };
 

@@ -21,35 +21,30 @@ except Exception:
     OpenAI = None  # type: ignore
 
 from .config import (
+    active_search_enabled,
     allowed_tenants,
+    aws_search_enabled,
     bool_env,
+    cloud_provider,
     cosmos_enabled,
     get_required_env,
+    persistent_store_enabled,
     search_enabled,
+    storage_container_name,
     utc_now_iso,
     validate_tenant_id,
 )
 from .models import (
     ChatRequest,
     ChunkRecord,
+    ConfirmUploadRequest,
     CreateTextKnowledgeRequest,
     CreateUploadRequest,
     DocumentRecord,
     CHUNKS_BY_TENANT,
     DOCS_BY_TENANT,
 )
-from .cosmos import (
-    delete_document_metadata,
-    get_document_metadata,
-    list_documents_by_tenant,
-    upsert_document_metadata,
-)
 from .storage import build_upload_blob_name, create_upload_sas_url
-from .search import (
-    delete_search_chunks_for_document,
-    list_search_document_groups,
-    upsert_search_chunks,
-)
 from .document_processor import (
     chunk_text,
     hydrate_indexed_documents_for_tenant,
@@ -57,6 +52,10 @@ from .document_processor import (
     process_queued_documents_for_tenant,
     tokenize,
 )
+from .providers import get_document_store, get_search_store, get_storage_provider
+
+document_store = get_document_store()
+search_store = get_search_store()
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -67,14 +66,19 @@ app = FastAPI(title="RAG Azure Python Backend", version="0.1.0")
 cors_origins = [
     item.strip()
     for item in os.getenv(
-        "CORS_ALLOW_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+        "CORS_ALLOW_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174",
     ).split(",")
     if item.strip()
 ]
+cors_origin_regex = os.getenv(
+    "CORS_ALLOW_ORIGIN_REGEX", r"^https?://(localhost|127\.0\.0\.1)(:\\d+)?$"
+).strip() or None
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins or ["*"],
+    allow_origins=cors_origins,
+    allow_origin_regex=cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -113,8 +117,8 @@ def health() -> Dict[str, str]:
 @app.get("/api/flags/deployment")
 def flags_deployment() -> Dict[str, Any]:
     return {
-        "cosmosDbEnabled": cosmos_enabled(),
-        "searchEnabled": search_enabled(),
+        "cosmosDbEnabled": persistent_store_enabled(),
+        "searchEnabled": active_search_enabled(),
         "embeddingPipelineEnabled": bool_env("EMBEDDING_ENABLED", False),
         "chatSearchMode": os.getenv("CHAT_SEARCH_MODE", "keyword").strip().lower() or "keyword",
         "ocrEnabled": bool_env("OCR_ENABLED", False),
@@ -126,16 +130,16 @@ def flags_deployment() -> Dict[str, Any]:
 @app.get("/api/documents/catalog")
 def list_document_catalog(tenantId: str = Query(...)) -> Dict[str, Any]:
     validate_tenant_id(tenantId)
-    if not cosmos_enabled() and not search_enabled():
-        raise HTTPException(503, "Cosmos DB and Azure AI Search are both disabled.")
+    if not persistent_store_enabled() and not search_enabled() and not aws_search_enabled():
+        raise HTTPException(503, "Document store and search are both disabled.")
 
     process_queued_documents_for_tenant(tenantId)
     hydrate_indexed_documents_for_tenant(tenantId)
 
     by_id: Dict[str, Dict[str, Any]] = {}
 
-    if cosmos_enabled():
-        for c in list_documents_by_tenant(tenantId, 200):
+    if persistent_store_enabled():
+        for c in document_store.list_by_tenant(tenantId, 200):
             doc_id = c.get("documentId") or c.get("id")
             if not doc_id:
                 continue
@@ -155,8 +159,17 @@ def list_document_catalog(tenantId: str = Query(...)) -> Dict[str, Any]:
                 "search": None,
             }
 
-    if search_enabled():
-        for doc_id, search_doc in list_search_document_groups(tenantId).items():
+    if active_search_enabled():
+        search_groups = search_store.list_document_groups(tenantId)
+        if isinstance(search_groups, dict):
+            group_items = search_groups.items()
+        else:
+            group_items = [
+                (g.get("documentId"), g)
+                for g in search_groups
+                if isinstance(g, dict) and g.get("documentId")
+            ]
+        for doc_id, search_doc in group_items:
             row = by_id.get(doc_id)
             if row:
                 row["search"] = search_doc
@@ -182,7 +195,7 @@ def list_document_catalog(tenantId: str = Query(...)) -> Dict[str, Any]:
     return {
         "tenantId": tenantId,
         "documents": documents,
-        "sources": {"cosmos": cosmos_enabled(), "search": search_enabled()},
+        "sources": {"cosmos": persistent_store_enabled(), "search": active_search_enabled()},
     }
 
 
@@ -209,8 +222,8 @@ def create_text_knowledge(payload: CreateTextKnowledgeRequest) -> Dict[str, Any]
         createdAt=now, updatedAt=now, contentType="text/plain",
     )
 
-    if cosmos_enabled():
-        upsert_document_metadata({
+    if persistent_store_enabled():
+        document_store.upsert({
             "documentId": doc_id, "tenantId": payload.tenantId,
             "blobName": blob_name, "status": "indexed",
             "contentType": "text/plain", "contentLength": len(text),
@@ -228,8 +241,8 @@ def create_text_knowledge(payload: CreateTextKnowledgeRequest) -> Dict[str, Any]
             )
         )
 
-    if search_enabled():
-        upsert_search_chunks(payload.tenantId, doc_id, blob_name, file_name, chunks)
+    if active_search_enabled():
+        search_store.upsert_chunks(payload.tenantId, doc_id, blob_name, file_name, chunks)
 
     return {
         "documentId": doc_id, "tenantId": payload.tenantId,
@@ -242,21 +255,21 @@ def create_text_knowledge(payload: CreateTextKnowledgeRequest) -> Dict[str, Any]
 @app.get("/api/documents/{document_id}")
 def get_document_status(document_id: str, tenantId: str = Query(...)) -> Dict[str, Any]:
     validate_tenant_id(tenantId)
-    if not cosmos_enabled():
-        raise HTTPException(503, "Cosmos DB status store is disabled.")
-    record = get_document_metadata(document_id, tenantId)
+    if not persistent_store_enabled():
+        raise HTTPException(503, "Document status store is disabled.")
+    record = document_store.get(document_id, tenantId)
     if not record:
         raise HTTPException(404, "Document status not found.")
     process_queued_document(record)
-    return get_document_metadata(document_id, tenantId) or record
+    return document_store.get(document_id, tenantId) or record
 
 
 @app.get("/api/documents/{document_id}/source")
 def get_document_source(document_id: str, tenantId: str = Query(...)) -> Dict[str, Any]:
     validate_tenant_id(tenantId)
-    if not cosmos_enabled():
-        raise HTTPException(503, "Cosmos DB is disabled.")
-    record = get_document_metadata(document_id, tenantId)
+    if not persistent_store_enabled():
+        raise HTTPException(503, "Document store is disabled.")
+    record = document_store.get(document_id, tenantId)
     if not record:
         raise HTTPException(404, "Document metadata not found.")
     source_text = (record.get("sourceText") or "").strip()
@@ -275,7 +288,7 @@ def get_document_source(document_id: str, tenantId: str = Query(...)) -> Dict[st
 @app.delete("/api/documents/{document_id}/purge")
 def purge_document(document_id: str, tenantId: str = Query(...)) -> Dict[str, Any]:
     validate_tenant_id(tenantId)
-    if not cosmos_enabled() and not search_enabled():
+    if not persistent_store_enabled() and not search_enabled() and not aws_search_enabled():
         raise HTTPException(503, "Cosmos DB and Azure AI Search are both disabled.")
 
     DOCS_BY_TENANT.get(tenantId, {}).pop(document_id, None)
@@ -285,10 +298,10 @@ def purge_document(document_id: str, tenantId: str = Query(...)) -> Dict[str, An
     ]
     deleted = before - len(CHUNKS_BY_TENANT.get(tenantId, []))
 
-    if search_enabled():
-        deleted += delete_search_chunks_for_document(document_id, tenantId)
+    if active_search_enabled():
+        deleted += search_store.delete_chunks_for_document(document_id, tenantId)
 
-    cosmos_deleted = delete_document_metadata(document_id, tenantId) if cosmos_enabled() else False
+    cosmos_deleted = document_store.delete(document_id, tenantId) if persistent_store_enabled() else False
 
     if deleted == 0 and not cosmos_deleted:
         raise HTTPException(404, "Document not found.")
@@ -357,29 +370,24 @@ def create_upload(payload: CreateUploadRequest) -> Dict[str, Any]:
         raise HTTPException(400, "fileName is required.")
 
     try:
-        account_name = get_required_env("AZURE_STORAGE_ACCOUNT_NAME")
-        account_key = get_required_env("AZURE_STORAGE_ACCOUNT_KEY")
-        blob_endpoint = os.getenv("AZURE_STORAGE_BLOB_ENDPOINT", "").strip() or None
-        container_name = os.getenv("AZURE_STORAGE_CONTAINER_NAME", "uploads").strip() or "uploads"
+        container_name = storage_container_name()
         expiry_minutes = int(os.getenv("SAS_EXPIRY_MINUTES", "15").strip() or "15")
     except ValueError:
         raise HTTPException(400, "SAS_EXPIRY_MINUTES must be a positive number.")
-    except RuntimeError:
-        raise HTTPException(500, "Failed to create upload URL.")
 
     if expiry_minutes <= 0:
         raise HTTPException(400, "SAS_EXPIRY_MINUTES must be a positive number.")
 
     doc_id = str(uuid4())
-    blob_name = build_upload_blob_name(tenant_id, doc_id, file_name)
+    storage = get_storage_provider()
+    blob_name = storage.build_upload_blob_name(tenant_id, doc_id, file_name)
 
     try:
-        upload_url = create_upload_sas_url(
-            account_name=account_name, account_key=account_key,
-            container_name=container_name, blob_name=blob_name,
+        upload_url = storage.create_upload_url(
+            blob_name=blob_name,
+            container_name=container_name,
             expiry_minutes=expiry_minutes,
             content_type=(payload.contentType or "").strip() or None,
-            blob_endpoint=blob_endpoint,
         )
     except Exception:
         raise HTTPException(500, "Failed to create upload URL.")
@@ -393,8 +401,8 @@ def create_upload(payload: CreateUploadRequest) -> Dict[str, Any]:
         contentLength=0, chunkCount=0, createdAt=now, updatedAt=now,
     )
 
-    if cosmos_enabled():
-        upsert_document_metadata({
+    if persistent_store_enabled():
+        document_store.upsert({
             "documentId": doc_id, "tenantId": tenant_id,
             "blobName": blob_name, "status": "queued",
             "contentType": (payload.contentType or "").strip() or None,
@@ -404,4 +412,31 @@ def create_upload(payload: CreateUploadRequest) -> Dict[str, Any]:
         "documentId": doc_id, "tenantId": tenant_id,
         "blobName": blob_name, "uploadUrl": upload_url,
         "expiresInMinutes": expiry_minutes,
+    }
+
+
+@app.post("/api/uploads/confirm")
+def confirm_upload(payload: ConfirmUploadRequest) -> Dict[str, Any]:
+    validate_tenant_id(payload.tenantId)
+    if persistent_store_enabled():
+        existing = document_store.get(payload.documentId, payload.tenantId)
+        content_type = (existing or {}).get("contentType")
+        document_store.upsert({
+            "documentId": payload.documentId,
+            "tenantId": payload.tenantId,
+            "blobName": payload.blobName,
+            "status": "processing",
+            "contentType": content_type,
+        })
+
+    # EC2 / ECS path: process immediately on confirm.
+    current = document_store.get(payload.documentId, payload.tenantId)
+    if current:
+        process_queued_document(current)
+
+    return {
+        "documentId": payload.documentId,
+        "tenantId": payload.tenantId,
+        "blobName": payload.blobName,
+        "queued": True,
     }

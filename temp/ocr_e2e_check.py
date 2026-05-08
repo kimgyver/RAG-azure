@@ -5,7 +5,7 @@ import urllib.request
 from pathlib import Path
 
 BASE_URL = "http://127.0.0.1:8001/api"
-TENANT_ID = "tenant-a"
+TENANT_ID = "tenant-azure-1"
 IMAGE_PATH = Path("/Users/jinyoungkim/terraform-repo/RAG-azure/docs/RAG-chatbot.png")
 SSL_CONTEXT = ssl._create_unverified_context()
 

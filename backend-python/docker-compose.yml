@@ -1,0 +1,24 @@
+# docker-compose.yml — 로컬 개발용 (EC2에서는 user_data가 이 파일을 생성)
+# 사용법: cp .env.example .env && docker compose up -d
+services:
+  backend:
+    build: .
+    env_file: .env
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+    restart: unless-stopped

@@ -21,7 +21,7 @@ I’m not tied to specific tools — I focus on choosing the right approach for 
 
 This role stood out to me because of its focus on building real AI-enabled systems and delivering practical outcomes — which aligns closely with how I like to work.
 
-Ngā mihi, Jason Kim
+Ngā mihi,Jason Kim
 
 \====================
 

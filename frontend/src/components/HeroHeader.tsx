@@ -1,14 +1,18 @@
-import type { RuntimeConfigSnapshot } from "../types/app";
+import type { BackendTarget, RuntimeConfigSnapshot } from "../types/app";
+import { BACKEND_RESOURCE_LABELS } from "../utils/app";
 
 type HeroHeaderProps = {
+  backendTarget: BackendTarget;
   runtimeConfigStatus: "loading" | "ok" | "error";
   runtimeConfig: RuntimeConfigSnapshot | null;
 };
 
 export function HeroHeader({
+  backendTarget,
   runtimeConfigStatus,
   runtimeConfig
 }: HeroHeaderProps) {
+  const resourceLabels = BACKEND_RESOURCE_LABELS[backendTarget];
   return (
     <header className="hero">
       <div>
@@ -16,7 +20,9 @@ export function HeroHeader({
         <h1>Upload & Chat</h1>
         <p className="hero-copy">
           Upload documents, search, and get AI-generated answers in one place.
-          Your deployment configuration is shown on the right.
+          Active backend profile: {resourceLabels.backendLabel} using{" "}
+          {resourceLabels.storageLabel}, {resourceLabels.metadataLabel}, and{" "}
+          {resourceLabels.searchLabel}.
         </p>
       </div>
       <div className="hero-stats">
@@ -39,7 +45,7 @@ export function HeroHeader({
         ) : (
           <>
             <div>
-              <span>Search & Indexing</span>
+              <span>{resourceLabels.searchLabel}</span>
               <strong>{runtimeConfig.searchEnabled ? "Ready" : "Off"}</strong>
               <p className="hero-stat-sub">
                 {runtimeConfig.embeddingPipelineEnabled
@@ -48,7 +54,9 @@ export function HeroHeader({
               </p>
             </div>
             <div>
-              <span>Chat Answers</span>
+              <span>
+                {resourceLabels.storageLabel} + {resourceLabels.metadataLabel}
+              </span>
               <strong>
                 {runtimeConfig.openAiChatConfigured
                   ? "AI-Generated"
@@ -56,8 +64,8 @@ export function HeroHeader({
               </strong>
               <p className="hero-stat-sub">
                 {runtimeConfig.openAiChatConfigured
-                  ? "Powered by GPT"
-                  : "From search results"}
+                  ? `Stored in ${resourceLabels.metadataLabel} and answered with GPT`
+                  : `Using ${resourceLabels.searchLabel} results only`}
               </p>
             </div>
           </>

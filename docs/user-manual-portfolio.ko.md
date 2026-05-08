@@ -147,8 +147,12 @@ flowchart TB
 
 ### 3.2 먼저 테넌트 컨텍스트 설정
 
-1. Tenant ID 입력란에 값을 입력합니다. 예: tenant-a
-2. 화살표 오른쪽의 effective tenant 값이 의도한 값인지 확인합니다.
+1. Tenant ID 드롭다운에서 테넌트를 선택합니다.
+2. 선택한 백엔드 프로필에 맞는 허용 테넌트를 사용합니다.
+
+- Azure 백엔드: tenant-azure-1, tenant-azure-2
+- AWS 백엔드: tenant-aws-1, tenant-aws-2
+
 3. 다음 점을 기억합니다.
 
 - 업로드 경로, 인덱싱, 챗 검색, 카탈로그, 퍼지가 모두 같은 테넌트를 사용합니다.

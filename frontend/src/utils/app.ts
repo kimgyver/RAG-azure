@@ -1,4 +1,73 @@
-import type { RuntimeConfigSnapshot } from "../types/app";
+import type { BackendTarget, RuntimeConfigSnapshot } from "../types/app";
+
+export const TENANT_OPTIONS_BY_BACKEND: Record<
+  BackendTarget,
+  [string, string]
+> = {
+  node: ["tenant-azure-1", "tenant-azure-2"],
+  python: ["tenant-azure-1", "tenant-azure-2"],
+  aws: ["tenant-aws-1", "tenant-aws-2"],
+  "aws-python": ["tenant-aws-1", "tenant-aws-2"]
+};
+
+export const BACKEND_RESOURCE_LABELS: Record<
+  BackendTarget,
+  {
+    backendLabel: string;
+    cloudLabel: string;
+    uploadUrlLabel: string;
+    uploadFlowLabel: string;
+    storageLabel: string;
+    storagePathLabel: string;
+    metadataLabel: string;
+    searchLabel: string;
+  }
+> = {
+  node: {
+    backendLabel: "Azure · Node (Functions)",
+    cloudLabel: "Azure",
+    uploadUrlLabel: "SAS URL",
+    uploadFlowLabel: "SAS direct upload",
+    storageLabel: "Blob Storage",
+    storagePathLabel: "Blob path prefix",
+    metadataLabel: "Cosmos DB",
+    searchLabel: "Azure AI Search"
+  },
+  python: {
+    backendLabel: "Azure · Python (Container App)",
+    cloudLabel: "Azure",
+    uploadUrlLabel: "SAS URL",
+    uploadFlowLabel: "SAS direct upload",
+    storageLabel: "Blob Storage",
+    storagePathLabel: "Blob path prefix",
+    metadataLabel: "Cosmos DB",
+    searchLabel: "Azure AI Search"
+  },
+  aws: {
+    backendLabel: "AWS · Node (Lambda)",
+    cloudLabel: "AWS",
+    uploadUrlLabel: "Signed URL",
+    uploadFlowLabel: "Signed URL upload",
+    storageLabel: "S3",
+    storagePathLabel: "S3 key prefix",
+    metadataLabel: "DynamoDB",
+    searchLabel: "OpenSearch"
+  },
+  "aws-python": {
+    backendLabel: "AWS · Python (EC2 + Docker)",
+    cloudLabel: "AWS",
+    uploadUrlLabel: "Signed URL",
+    uploadFlowLabel: "Signed URL upload",
+    storageLabel: "S3",
+    storagePathLabel: "S3 key prefix",
+    metadataLabel: "DynamoDB",
+    searchLabel: "OpenSearch"
+  }
+};
+
+export function isAwsBackend(target: BackendTarget): boolean {
+  return target === "aws" || target === "aws-python";
+}
 
 export function searchModeLabel(
   mode: RuntimeConfigSnapshot["chatSearchMode"]

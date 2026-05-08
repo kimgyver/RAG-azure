@@ -48,3 +48,39 @@ def search_enabled() -> bool:
 
 def ocr_enabled() -> bool:
     return bool_env("OCR_ENABLED", False)
+
+
+def cloud_provider() -> str:
+    """Return the active cloud provider: 'azure' (default) or 'aws'."""
+    return os.getenv("CLOUD_PROVIDER", "azure").strip().lower()
+
+
+def storage_container_name() -> str:
+    """Return the active blob container or S3 bucket name for the current cloud."""
+    if cloud_provider() == "aws":
+        return os.getenv("S3_BUCKET_NAME", "uploads").strip() or "uploads"
+    return os.getenv("AZURE_STORAGE_CONTAINER_NAME", "uploads").strip() or "uploads"
+
+
+def active_search_enabled() -> bool:
+    """Return the active search flag for the current cloud."""
+    if cloud_provider() == "aws":
+        return aws_search_enabled()
+    return search_enabled()
+
+
+def persistent_store_enabled() -> bool:
+    """True when a persistent document-metadata store is available.
+    Azure: Cosmos DB (COSMOS_DB_ENABLED=true)
+    AWS:   DynamoDB (always available when CLOUD_PROVIDER=aws)
+    """
+    return cosmos_enabled() or cloud_provider() == "aws"
+
+
+def aws_search_enabled() -> bool:
+    """True when OpenSearch/search is available.
+    Falls back to SEARCH_ENABLED env var; defaults True for AWS.
+    """
+    if cloud_provider() == "aws":
+        return bool_env("SEARCH_ENABLED", True)
+    return search_enabled()
