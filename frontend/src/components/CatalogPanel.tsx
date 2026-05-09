@@ -117,6 +117,8 @@ export function CatalogPanel({
                 <tr key={row.documentId}>
                   {(() => {
                     const metadata = row.cosmos ?? row.dynamo ?? null;
+                    const searchChunkCount =
+                      row.search?.chunkCount ?? metadata?.chunkCount ?? null;
                     return (
                       <>
                         <td className="mono">{row.documentId}</td>
@@ -138,8 +140,8 @@ export function CatalogPanel({
                           )}
                         </td>
                         <td>
-                          {row.search && row.search.chunkCount != null ? (
-                            <>{row.search.chunkCount} chunks</>
+                          {searchChunkCount != null ? (
+                            <>{searchChunkCount} chunks</>
                           ) : (
                             <span className="muted">—</span>
                           )}
