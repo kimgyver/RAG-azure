@@ -147,6 +147,22 @@ function resolveFetchErrorMessage(
   return message;
 }
 
+const CHAT_RETRYABLE_STATUS = new Set([429, 502, 503, 504]);
+
+function isRetryableChatFetchError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("failed to fetch") ||
+    message.includes("networkerror") ||
+    message.includes("load failed") ||
+    message.includes("timeout") ||
+    message.includes("network request failed")
+  );
+}
+
 export function useAppController() {
   const defaultBackendTarget = useMemo(getDefaultBackendTarget, []);
   const initialTenantId = TENANT_OPTIONS_BY_BACKEND[defaultBackendTarget][0];
@@ -794,28 +810,54 @@ export function useAppController() {
           content: message.content
         }));
 
-      const response = await fetch(`${apiBaseUrl}/chat`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(apiKey ? { "x-functions-key": apiKey } : {})
-        },
-        body: JSON.stringify({
-          tenantId: effectiveTenantId,
-          question,
-          sessionId: chatSessionId,
-          summaryMemory: chatSummaryMemory,
-          messages: messagesForMemory
-        })
+      const requestBody = JSON.stringify({
+        tenantId: effectiveTenantId,
+        question,
+        sessionId: chatSessionId,
+        summaryMemory: chatSummaryMemory,
+        messages: messagesForMemory
       });
 
-      if (!response.ok) {
-        const responseText = await response.text();
-        const detail = extractApiMessage(
-          responseText,
-          `HTTP ${response.status}`
-        );
-        throw new Error(`Chat request failed (${response.status}) ${detail}`);
+      const maxAttempts = 3;
+      let response: Response | null = null;
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+          response = await fetch(`${apiBaseUrl}/chat`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(apiKey ? { "x-functions-key": apiKey } : {})
+            },
+            body: requestBody
+          });
+
+          if (response.ok) {
+            break;
+          }
+
+          const responseText = await response.text();
+          const detail = extractApiMessage(
+            responseText,
+            `HTTP ${response.status}`
+          );
+          const retryable = CHAT_RETRYABLE_STATUS.has(response.status);
+          if (retryable && attempt < maxAttempts) {
+            await waitMs(250 * attempt);
+            continue;
+          }
+
+          throw new Error(`Chat request failed (${response.status}) ${detail}`);
+        } catch (error) {
+          if (isRetryableChatFetchError(error) && attempt < maxAttempts) {
+            await waitMs(250 * attempt);
+            continue;
+          }
+          throw error;
+        }
+      }
+
+      if (!response?.ok) {
+        throw new Error("Chat request failed (503) Service temporarily unavailable.");
       }
 
       const payload = (await response.json()) as ChatResponse;
