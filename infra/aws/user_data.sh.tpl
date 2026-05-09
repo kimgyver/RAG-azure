@@ -24,6 +24,12 @@ else
     || echo "WARNING: docker compose install failed - deploy script will handle"
 fi
 
+# OpenSearch requires this kernel map count.
+sysctl -w vm.max_map_count=262144 || echo "WARNING: vm.max_map_count set failed"
+if ! grep -q "vm.max_map_count=262144" /etc/sysctl.conf; then
+  echo "vm.max_map_count=262144" >> /etc/sysctl.conf
+fi
+
 # ── 2. Fetch OPENAI_API_KEY from SSM ─────────────────────────────────────────
 OPENAI_API_KEY=$(aws ssm get-parameter \
   --region "${aws_region}" \
@@ -54,9 +60,28 @@ chmod 600 /opt/ragbackend/.env
 # ── 4. Write docker-compose.yml ───────────────────────────────────────────────
 cat > /opt/ragbackend/docker-compose.yml <<'COMPOSE'
 services:
+  opensearch:
+    image: opensearchproject/opensearch:2.11.1
+    environment:
+      discovery.type: single-node
+      plugins.security.disabled: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms256m -Xmx256m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    restart: unless-stopped
+
   backend:
     image: ECR_IMAGE_PLACEHOLDER
     env_file: .env
+    depends_on:
+      - opensearch
     ports:
       - "8000:8000"
     restart: unless-stopped
@@ -65,6 +90,9 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+volumes:
+  opensearch-data:
 COMPOSE
 
 # Substitute actual ECR image

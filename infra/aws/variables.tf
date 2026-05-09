@@ -27,18 +27,6 @@ variable "github_repo" {
   type        = string
 }
 
-variable "opensearch_instance_type" {
-  description = "OpenSearch instance type"
-  type        = string
-  default     = "t3.small.search"
-}
-
-variable "opensearch_instance_count" {
-  description = "Number of OpenSearch data nodes"
-  type        = number
-  default     = 1
-}
-
 variable "ec2_instance_type" {
   description = "EC2 instance type (t2.micro = Free Tier eligible)"
   type        = string

@@ -10,8 +10,8 @@ openai_api_key = "sk-..."   # replace with your key
 # GitHub repo for OIDC (format: org/repo — e.g. "jinyoungkim/RAG-azure")
 github_repo = "your-github-org/RAG-azure"
 
-# opensearch_instance_type  = "t3.small.search"
-# opensearch_instance_count = 1
+# OpenSearch is hosted on the EC2 instance via Docker Compose
+# (managed Amazon OpenSearch Service is not used in this stack).
 
 # ecs_cpu    = 512
 # ecs_memory = 1024

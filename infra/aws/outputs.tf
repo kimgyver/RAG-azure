@@ -19,8 +19,8 @@ output "sqs_queue_url" {
 }
 
 output "opensearch_endpoint" {
-  description = "OpenSearch domain endpoint (HTTPS)"
-  value       = aws_opensearch_domain.search.endpoint != null ? "https://${aws_opensearch_domain.search.endpoint}" : null
+  description = "OpenSearch endpoint for EC2 Docker backend (accessible from inside EC2 host/container network)"
+  value       = "http://opensearch:9200"
 }
 
 output "ec2_public_ip" {

@@ -1,0 +1,180 @@
+import { Client as OpenSearchClient } from "@opensearch-project/opensearch";
+import { AwsSigv4Signer } from "@opensearch-project/opensearch/aws";
+import { defaultProvider } from "@aws-sdk/credential-provider-node";
+function isIndexNotFound(error) {
+    if (!(error instanceof Error)) {
+        return false;
+    }
+    return error.message.includes("index_not_found_exception");
+}
+function getClient() {
+    const endpoint = process.env.OPENSEARCH_ENDPOINT;
+    if (!endpoint)
+        throw new Error("OPENSEARCH_ENDPOINT is required");
+    const normalizedEndpoint = endpoint.toLowerCase();
+    const isManagedOpenSearch = normalizedEndpoint.includes(".es.amazonaws.com") ||
+        normalizedEndpoint.includes(".aoss.amazonaws.com");
+    if (!isManagedOpenSearch) {
+        return new OpenSearchClient({
+            node: endpoint
+        });
+    }
+    const region = process.env.AWS_REGION ?? "ap-southeast-2";
+    return new OpenSearchClient({
+        ...AwsSigv4Signer({
+            region,
+            service: "es",
+            getCredentials: defaultProvider()
+        }),
+        node: endpoint
+    });
+}
+let _client;
+function client() {
+    if (!_client)
+        _client = getClient();
+    return _client;
+}
+const INDEX = () => process.env.OPENSEARCH_INDEX_NAME ?? "rag-chunks";
+export class AwsSearchStoreProvider {
+    isEnabled() {
+        return Boolean(process.env.OPENSEARCH_ENDPOINT);
+    }
+    async indexChunks(chunks) {
+        if (!chunks.length)
+            return false;
+        const body = chunks.flatMap(doc => [
+            { index: { _index: INDEX(), _id: String(doc.id) } },
+            doc
+        ]);
+        await client().bulk({ body });
+        return true;
+    }
+    async searchChunks(query, tenantId, top = 3, queryEmbedding, mode = "hybrid") {
+        const mustFilter = { term: { "tenantId.keyword": tenantId } };
+        let body;
+        if (mode === "vector" && queryEmbedding) {
+            body = {
+                query: { bool: { filter: [mustFilter] } },
+                knn: { embedding: { vector: queryEmbedding, k: top } },
+                size: top
+            };
+        }
+        else if (mode === "hybrid" && queryEmbedding) {
+            body = {
+                query: {
+                    bool: {
+                        must: [{ match: { content: query } }],
+                        filter: [mustFilter]
+                    }
+                },
+                knn: { embedding: { vector: queryEmbedding, k: top } },
+                size: top
+            };
+        }
+        else {
+            body = {
+                query: {
+                    bool: {
+                        must: [{ match: { content: query } }],
+                        filter: [mustFilter]
+                    }
+                },
+                size: top
+            };
+        }
+        try {
+            const response = await client().search({ index: INDEX(), body });
+            return (response.body.hits?.hits ?? []).map((h) => ({
+                ...h._source,
+                score: h._score
+            }));
+        }
+        catch (error) {
+            if (isIndexNotFound(error)) {
+                return [];
+            }
+            throw error;
+        }
+    }
+    async deleteChunksForDocument(documentId, tenantId) {
+        try {
+            const response = await client().deleteByQuery({
+                index: INDEX(),
+                body: {
+                    query: {
+                        bool: {
+                            filter: [
+                                { term: { "documentId.keyword": documentId } },
+                                { term: { "tenantId.keyword": tenantId } }
+                            ]
+                        }
+                    }
+                }
+            });
+            return response.body.deleted ?? 0;
+        }
+        catch (error) {
+            if (isIndexNotFound(error)) {
+                return 0;
+            }
+            throw error;
+        }
+    }
+    async countChunksForDocument(documentId, tenantId) {
+        try {
+            const response = await client().count({
+                index: INDEX(),
+                body: {
+                    query: {
+                        bool: {
+                            filter: [
+                                { term: { "documentId.keyword": documentId } },
+                                { term: { "tenantId.keyword": tenantId } }
+                            ]
+                        }
+                    }
+                }
+            });
+            return response.body.count ?? 0;
+        }
+        catch (error) {
+            if (isIndexNotFound(error)) {
+                return 0;
+            }
+            throw error;
+        }
+    }
+    async listDocumentGroups(tenantId) {
+        try {
+            const response = await client().search({
+                index: INDEX(),
+                body: {
+                    query: { term: { "tenantId.keyword": tenantId } },
+                    size: 0,
+                    aggs: {
+                        docs: {
+                            terms: { field: "documentId.keyword", size: 500 },
+                            aggs: {
+                                fileName: { terms: { field: "fileName.keyword", size: 1 } },
+                                blobName: { terms: { field: "blobName.keyword", size: 1 } }
+                            }
+                        }
+                    }
+                }
+            });
+            return (response.body.aggregations?.docs?.buckets ?? []).map((b) => ({
+                documentId: b.key,
+                chunkCount: b.doc_count,
+                fileName: b.fileName?.buckets?.[0]?.key ?? "",
+                blobName: b.blobName?.buckets?.[0]?.key ?? ""
+            }));
+        }
+        catch (error) {
+            if (isIndexNotFound(error)) {
+                return [];
+            }
+            throw error;
+        }
+    }
+}

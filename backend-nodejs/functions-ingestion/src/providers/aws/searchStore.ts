@@ -14,6 +14,18 @@ function isIndexNotFound(error: unknown): boolean {
 function getClient(): OpenSearchClient {
   const endpoint = process.env.OPENSEARCH_ENDPOINT;
   if (!endpoint) throw new Error("OPENSEARCH_ENDPOINT is required");
+
+  const normalizedEndpoint = endpoint.toLowerCase();
+  const isManagedOpenSearch =
+    normalizedEndpoint.includes(".es.amazonaws.com") ||
+    normalizedEndpoint.includes(".aoss.amazonaws.com");
+
+  if (!isManagedOpenSearch) {
+    return new OpenSearchClient({
+      node: endpoint
+    });
+  }
+
   const region = process.env.AWS_REGION ?? "ap-southeast-2";
   return new OpenSearchClient({
     ...AwsSigv4Signer({

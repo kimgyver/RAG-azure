@@ -1,5 +1,6 @@
 locals {
   name_prefix = "${var.project_name}-${var.environment}"
+  opensearch_endpoint = "http://opensearch:9200"
   common_tags = {
     Project     = var.project_name
     Environment = var.environment
@@ -112,50 +113,6 @@ resource "aws_sqs_queue" "documents" {
   tags = local.common_tags
 }
 
-# ── OpenSearch ────────────────────────────────────────────────────────────────
-resource "aws_opensearch_domain" "search" {
-  domain_name    = "${local.name_prefix}-search-v2"
-  engine_version = "OpenSearch_2.11"
-
-  cluster_config {
-    instance_type  = var.opensearch_instance_type
-    instance_count = var.opensearch_instance_count
-  }
-
-  ebs_options {
-    ebs_enabled = true
-    volume_size = 20
-    volume_type = "gp3"
-  }
-
-  encrypt_at_rest {
-    enabled = true
-  }
-
-  node_to_node_encryption {
-    enabled = true
-  }
-
-  domain_endpoint_options {
-    enforce_https       = true
-    tls_security_policy = "Policy-Min-TLS-1-2-2019-07"
-  }
-
-  access_policies = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect    = "Allow"
-        Principal = { AWS = aws_iam_role.ec2_backend.arn }
-        Action    = "es:*"
-        Resource  = "arn:aws:es:${var.region}:${data.aws_caller_identity.current.account_id}:domain/${local.name_prefix}-search-v2/*"
-      }
-    ]
-  })
-
-  tags = local.common_tags
-}
-
 # ── CloudWatch Log Group ──────────────────────────────────────────────────────
 resource "aws_cloudwatch_log_group" "backend" {
   name              = "/ec2/${local.name_prefix}-backend"
@@ -211,12 +168,6 @@ resource "aws_iam_role_policy" "ec2_backend_inline" {
         Effect   = "Allow"
         Action   = ["sqs:SendMessage", "sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"]
         Resource = [aws_sqs_queue.documents.arn, aws_sqs_queue.documents_dlq.arn]
-      },
-      {
-        Sid      = "OpenSearch"
-        Effect   = "Allow"
-        Action   = ["es:ESHttp*"]
-        Resource = "${aws_opensearch_domain.search.arn}/*"
       },
       {
         Sid      = "Textract"
@@ -323,7 +274,7 @@ resource "aws_instance" "backend" {
     s3_bucket           = aws_s3_bucket.uploads.bucket
     dynamodb_table      = aws_dynamodb_table.documents.name
     sqs_queue_url       = aws_sqs_queue.documents.url
-    opensearch_endpoint = "https://${aws_opensearch_domain.search.endpoint}"
+    opensearch_endpoint = local.opensearch_endpoint
     allowed_tenant_ids  = var.allowed_tenant_ids
     openai_ssm_name     = aws_ssm_parameter.openai_api_key.name
   }))
@@ -485,12 +436,6 @@ resource "aws_iam_role_policy" "lambda_app" {
         Resource = [aws_sqs_queue.documents.arn, aws_sqs_queue.documents_dlq.arn]
       },
       {
-        Sid      = "OpenSearch"
-        Effect   = "Allow"
-        Action   = ["es:ESHttpGet", "es:ESHttpPost", "es:ESHttpPut", "es:ESHttpDelete", "es:ESHttpHead"]
-        Resource = "${aws_opensearch_domain.search.arn}/*"
-      },
-      {
         Sid      = "Textract"
         Effect   = "Allow"
         Action   = ["textract:DetectDocumentText", "textract:AnalyzeDocument"]
@@ -546,10 +491,10 @@ resource "aws_lambda_function" "node_http" {
       S3_BUCKET_NAME        = aws_s3_bucket.uploads.id
       DYNAMODB_TABLE_NAME   = aws_dynamodb_table.documents.name
       SQS_QUEUE_URL         = aws_sqs_queue.documents.url
-      OPENSEARCH_ENDPOINT   = "https://${aws_opensearch_domain.search.endpoint}"
+      OPENSEARCH_ENDPOINT   = ""
       OPENSEARCH_INDEX_NAME = "rag-chunks"
       ALLOWED_TENANT_IDS    = var.allowed_tenant_ids
-      SEARCH_ENABLED        = "true"
+      SEARCH_ENABLED        = "false"
       OPENAI_API_KEY        = var.openai_api_key
     }
   }
@@ -576,10 +521,10 @@ resource "aws_lambda_function" "node_worker" {
       S3_BUCKET_NAME        = aws_s3_bucket.uploads.id
       DYNAMODB_TABLE_NAME   = aws_dynamodb_table.documents.name
       SQS_QUEUE_URL         = aws_sqs_queue.documents.url
-      OPENSEARCH_ENDPOINT   = "https://${aws_opensearch_domain.search.endpoint}"
+      OPENSEARCH_ENDPOINT   = ""
       OPENSEARCH_INDEX_NAME = "rag-chunks"
       ALLOWED_TENANT_IDS    = var.allowed_tenant_ids
-      SEARCH_ENABLED        = "true"
+      SEARCH_ENABLED        = "false"
       OPENAI_API_KEY        = var.openai_api_key
     }
   }
