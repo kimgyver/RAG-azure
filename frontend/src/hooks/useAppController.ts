@@ -260,70 +260,75 @@ export function useAppController() {
     []
   );
 
-  const loadCatalog = useCallback(async () => {
-    const activeBackend = backendTarget;
-    const labels = BACKEND_RESOURCE_LABELS[activeBackend];
-    setCatalogStateByBackend(prev => ({
-      ...prev,
-      [activeBackend]: {
-        ...prev[activeBackend],
-        catalogStatus: "loading",
-        catalogMessage: `Reading ${labels.metadataLabel} and ${labels.searchLabel}…`
-      }
-    }));
-
-    try {
-      const response = await fetch(
-        `${apiBaseUrl}/documents/catalog?tenantId=${encodeURIComponent(effectiveTenantId)}`,
-        {
-          headers: {
-            ...(apiKey ? { "x-functions-key": apiKey } : {})
-          }
-        }
-      );
-      const text = await response.text();
-      if (!response.ok) {
-        throw new Error(extractApiMessage(text, `HTTP ${response.status}`));
-      }
-
-      const payload = JSON.parse(text) as CatalogResponse;
-      setCatalogStateByBackend(prev => ({
-        ...prev,
-        [activeBackend]: {
-          catalogRows: payload.documents,
-          catalogStatus: "ok",
-          catalogMessage: `${labels.metadataLabel} ${payload.sources.cosmos ? "ON" : "OFF"} · ${labels.searchLabel} ${payload.sources.search ? "ON" : "OFF"} · ${payload.documents.length} doc(s)`
-        }
-      }));
-      setTenantErrorByBackend(prev => ({ ...prev, [activeBackend]: "" }));
-    } catch (error) {
-      const message = resolveFetchErrorMessage(
-        error,
-        activeBackend,
-        apiBaseUrl,
-        "Could not load catalog."
-      );
-      setCatalogStateByBackend(prev => ({
-        ...prev,
-        [activeBackend]: {
-          catalogRows: [],
-          catalogStatus: "error",
-          catalogMessage: message
-        }
-      }));
-      if (message.includes("tenantId is not allowed")) {
-        setTenantErrorByBackend(prev => ({
+  const loadCatalog = useCallback(
+    async (options?: { silent?: boolean }) => {
+      const activeBackend = backendTarget;
+      const labels = BACKEND_RESOURCE_LABELS[activeBackend];
+      if (!options?.silent) {
+        setCatalogStateByBackend(prev => ({
           ...prev,
-          [activeBackend]: message
+          [activeBackend]: {
+            ...prev[activeBackend],
+            catalogStatus: "loading",
+            catalogMessage: `Reading ${labels.metadataLabel} and ${labels.searchLabel}…`
+          }
         }));
       }
-    }
-  }, [backendTarget, apiBaseUrl, effectiveTenantId, apiKey]);
+
+      try {
+        const response = await fetch(
+          `${apiBaseUrl}/documents/catalog?tenantId=${encodeURIComponent(effectiveTenantId)}`,
+          {
+            headers: {
+              ...(apiKey ? { "x-functions-key": apiKey } : {})
+            }
+          }
+        );
+        const text = await response.text();
+        if (!response.ok) {
+          throw new Error(extractApiMessage(text, `HTTP ${response.status}`));
+        }
+
+        const payload = JSON.parse(text) as CatalogResponse;
+        setCatalogStateByBackend(prev => ({
+          ...prev,
+          [activeBackend]: {
+            catalogRows: payload.documents,
+            catalogStatus: "ok",
+            catalogMessage: `${labels.metadataLabel} ${payload.sources.cosmos ? "ON" : "OFF"} · ${labels.searchLabel} ${payload.sources.search ? "ON" : "OFF"} · ${payload.documents.length} doc(s)`
+          }
+        }));
+        setTenantErrorByBackend(prev => ({ ...prev, [activeBackend]: "" }));
+      } catch (error) {
+        const message = resolveFetchErrorMessage(
+          error,
+          activeBackend,
+          apiBaseUrl,
+          "Could not load catalog."
+        );
+        setCatalogStateByBackend(prev => ({
+          ...prev,
+          [activeBackend]: {
+            catalogRows: [],
+            catalogStatus: "error",
+            catalogMessage: message
+          }
+        }));
+        if (message.includes("tenantId is not allowed")) {
+          setTenantErrorByBackend(prev => ({
+            ...prev,
+            [activeBackend]: message
+          }));
+        }
+      }
+    },
+    [backendTarget, apiBaseUrl, effectiveTenantId, apiKey]
+  );
 
   const refreshCatalogWithRetries = useCallback(
-    async (attempts = 4, intervalMs = 350) => {
+    async (attempts = 4, intervalMs = 350, silent = true) => {
       for (let i = 0; i < attempts; i += 1) {
-        await loadCatalog();
+        await loadCatalog({ silent });
         if (i < attempts - 1) {
           await waitMs(intervalMs);
         }
@@ -456,7 +461,7 @@ export function useAppController() {
                 uploadMessage:
                   "Upload completed but status metadata is not ready. Refresh catalog or re-upload if this persists."
               }));
-              void refreshCatalogWithRetries(2, 400);
+              void refreshCatalogWithRetries(2, 400, true);
             }
           }
           return;
@@ -519,7 +524,7 @@ export function useAppController() {
             ...current,
             trackedDocument: null
           }));
-          await refreshCatalogWithRetries(3, 500);
+          await refreshCatalogWithRetries(3, 500, true);
         }
       } catch {
         // Polling errors retry on the next interval.
@@ -552,6 +557,35 @@ export function useAppController() {
       }
     },
     [backendTarget, tenantError]
+  );
+
+  const onBackendTargetChange = useCallback(
+    (nextBackend: BackendTarget) => {
+      if (nextBackend === backendTarget) {
+        return;
+      }
+
+      const currentIsAws = isAwsBackend(backendTarget);
+      const nextIsAws = isAwsBackend(nextBackend);
+
+      // Keep the current tenant when switching within one cloud family.
+      if (currentIsAws === nextIsAws) {
+        setTenantIdByBackend(prev => {
+          const currentTenant =
+            prev[backendTarget] ?? TENANT_OPTIONS_BY_BACKEND[backendTarget][0];
+          const allowedForNext = TENANT_OPTIONS_BY_BACKEND[nextBackend];
+          return {
+            ...prev,
+            [nextBackend]: allowedForNext.includes(currentTenant)
+              ? currentTenant
+              : allowedForNext[0]
+          };
+        });
+      }
+
+      setBackendTarget(nextBackend);
+    },
+    [backendTarget]
   );
 
   const onFileChange = useCallback(
@@ -927,7 +961,7 @@ export function useAppController() {
       setTextTitle("");
       setTextContent("");
       setTenantErrorByBackend(prev => ({ ...prev, [backendTarget]: "" }));
-      await refreshCatalogWithRetries(2, 350);
+      await refreshCatalogWithRetries(2, 350, true);
     } catch (error) {
       updateProcessingState(backendTarget, current => ({
         ...current,
@@ -1000,7 +1034,7 @@ export function useAppController() {
 
         const attempts =
           purgePayload && (purgePayload.remainingSearchChunks ?? 0) > 0 ? 6 : 4;
-        await refreshCatalogWithRetries(attempts, 350);
+        await refreshCatalogWithRetries(attempts, 350, true);
         setTenantErrorByBackend(prev => ({ ...prev, [backendTarget]: "" }));
       } catch (error) {
         const message =
@@ -1048,7 +1082,7 @@ export function useAppController() {
 
   return {
     backendTarget,
-    setBackendTarget,
+    setBackendTarget: onBackendTargetChange,
     tenantId,
     tenantError,
     apiBaseUrl,
