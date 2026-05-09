@@ -168,8 +168,8 @@ export const statusLabel: Record<DocumentStatus, string> = {
   uploading: "Uploading",
   queued: "Queued",
   processing: "Processing",
-  chunked: "Chunked",
+  chunked: "Processed",
   skipped: "Skipped",
-  indexed: "Indexed",
+  indexed: "Processed",
   failed: "Failed"
 };

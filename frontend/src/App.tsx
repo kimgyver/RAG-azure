@@ -12,6 +12,7 @@ import {
   useUpload,
   useTextIngest
 } from "./hooks";
+import type { DocumentItem } from "./types/app";
 
 function App() {
   // Backend configuration: backend selection, tenant management
@@ -68,6 +69,22 @@ function App() {
     backendConfig.backendTarget,
     () => catalog.refreshWithRetries(2, 350, true)
   );
+
+  const uploadDocuments = useMemo<DocumentItem[]>(() => {
+    return upload.documents.map(item => {
+      const liveStatus = catalog.documentItems[item.id];
+      if (!liveStatus) {
+        return item;
+      }
+
+      return {
+        ...item,
+        status: liveStatus.status as DocumentItem["status"],
+        updatedAt: liveStatus.updatedAt,
+        chunkCount: liveStatus.chunkCount
+      };
+    });
+  }, [catalog.documentItems, upload.documents]);
 
   // Search-only mode: when OpenAI is not configured
   const searchOnlyMode = useMemo(
@@ -148,7 +165,7 @@ function App() {
             uploadMessage={upload.uploadMessage}
             effectiveTenantId={effectiveTenantId}
             uploadApiBaseUrl={backendConfig.apiBaseUrl}
-            documents={upload.documents}
+            documents={uploadDocuments}
             textTitle={textIngest.textTitle}
             textContent={textIngest.textContent}
             textIngestState={textIngest.textIngestState}

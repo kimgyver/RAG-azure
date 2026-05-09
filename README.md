@@ -21,7 +21,8 @@ Azure 네이티브 구성(Blob, Functions, Service Bus, 선택적 Cosmos DB·AI 
 | 문서                                                                           | 내용                                                                                                                                        |
 | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | [docs/architecture.md](./docs/architecture.md)                                 | 목표, 상위 아키텍처, SAS 직접 업로드, 단계별 데이터 흐름, Azure 서비스 역할                                                                 |
-| [docs/chatbot-feature-architecture.md](./docs/chatbot-feature-architecture.md) | AWS 챗봇 아키텍처와 유사한 수준으로 정리한 Azure 챗봇 기능 다이어그램(Mermaid)                                                              |
+| [docs/chatbot-feature-architecture.md](./docs/chatbot-feature-architecture.md) | Azure 챗봇 기능 아키텍처 다이어그램(Mermaid)                                                                                                 |
+| [docs/chatbot-feature-architecture-aws.md](./docs/chatbot-feature-architecture-aws.md) | AWS 챗봇 기능 아키텍처 다이어그램(Mermaid)                                                                                                   |
 | [docs/development.md](./docs/development.md)                                   | 환경 변수 표, Step 1~10 구현 체크리스트, 로컬 실행·Search/Chat 디버깅                                                                       |
 | [docs/deployment-azure.md](./docs/deployment-azure.md)                         | Terraform 적용, **Functions publish(`dist` 포함)**, 프론트·CORS, **기존 AI Search 연결**, 카탈로그 **503/404** 트러블슈팅, 할 일 체크리스트 |
 | [docs/design-and-scope.md](./docs/design-and-scope.md)                         | 멀티테넌트·Cosmos 설계 메모, 청킹, Chat 호스팅 선택, IaC 순서, MVP 범위                                                                     |

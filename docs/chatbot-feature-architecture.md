@@ -2,7 +2,7 @@
 
 [← README로 돌아가기](../README.md)
 
-AWS 챗봇 구조와 유사한 수준으로, 현재 앱의 Azure 구성요소를 기준으로 정리한 아키텍처 다이어그램이다.
+Azure 챗봇 구조와 유사한 수준으로, 현재 앱의 Azure 구성요소를 기준으로 정리한 아키텍처 다이어그램이다.
 
 ```mermaid
 flowchart TB
