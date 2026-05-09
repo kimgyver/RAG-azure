@@ -857,7 +857,9 @@ export function useAppController() {
       }
 
       if (!response?.ok) {
-        throw new Error("Chat request failed (503) Service temporarily unavailable.");
+        throw new Error(
+          "Chat request failed (503) Service temporarily unavailable."
+        );
       }
 
       const payload = (await response.json()) as ChatResponse;
