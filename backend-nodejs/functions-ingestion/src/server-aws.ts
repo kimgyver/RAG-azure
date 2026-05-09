@@ -274,6 +274,49 @@ app.get("/api/documents/catalog", async (req: Request, res: Response) => {
     (cosmosDocs as AwsDocumentRecord[]).map(d => [String(d.documentId), d])
   );
 
+  // OpenSearch aggregation can occasionally miss just-indexed documents.
+  // Backfill missing search groups with per-document count queries.
+  if (searchStore.isEnabled()) {
+    const missingIds = (cosmosDocs as AwsDocumentRecord[])
+      .map(doc => String(doc.documentId ?? ""))
+      .filter(documentId => Boolean(documentId) && !searchMap.has(documentId));
+
+    if (missingIds.length > 0) {
+      const fallbackGroups = await Promise.all(
+        missingIds.map(async documentId => {
+          try {
+            const count = await searchStore.countChunksForDocument(
+              documentId,
+              tenantId
+            );
+            if (count <= 0) {
+              return null;
+            }
+
+            const meta = cosmosMap.get(documentId);
+            const blobName = String(meta?.blobName ?? "");
+            const fileName = blobName.split("/").pop() ?? documentId;
+
+            return {
+              documentId,
+              chunkCount: count,
+              fileName,
+              blobName
+            } satisfies AwsSearchGroup;
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      fallbackGroups.forEach(group => {
+        if (group?.documentId) {
+          searchMap.set(String(group.documentId), group);
+        }
+      });
+    }
+  }
+
   const allIds = new Set([...cosmosMap.keys(), ...searchMap.keys()]);
   const rows = Array.from(allIds).map(id => {
     const c = cosmosMap.get(id);
@@ -295,7 +338,10 @@ app.get("/api/documents/catalog", async (req: Request, res: Response) => {
         : null,
       search: s
         ? {
-            chunkCount: s.chunkCount,
+            chunkCount:
+              typeof s.chunkCount === "number"
+                ? s.chunkCount
+                : Number(s.chunkCount ?? 0),
             fileName: s.fileName,
             blobName: s.blobName
           }

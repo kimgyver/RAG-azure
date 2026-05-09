@@ -138,7 +138,7 @@ export function CatalogPanel({
                           )}
                         </td>
                         <td>
-                          {row.search ? (
+                          {row.search && row.search.chunkCount != null ? (
                             <>{row.search.chunkCount} chunks</>
                           ) : (
                             <span className="muted">—</span>

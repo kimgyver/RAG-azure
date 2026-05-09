@@ -15,6 +15,128 @@ import { getStorageProvider, getDocumentStore, getSearchStore } from "./provider
 import OpenAI from "openai";
 const documentStore = getDocumentStore();
 const searchStore = getSearchStore();
+function normalizeText(value) {
+    return value.replace(/\s+/g, " ").trim();
+}
+function deriveChunkCount(record) {
+    if (typeof record.chunkCount === "number" &&
+        Number.isFinite(record.chunkCount)) {
+        return record.chunkCount;
+    }
+    const sourceText = typeof record.sourceText === "string" ? record.sourceText.trim() : "";
+    if (!sourceText) {
+        return undefined;
+    }
+    const chunkSize = Number(process.env.CHUNK_SIZE_CHARS ?? "1200");
+    const chunkOverlap = Number(process.env.CHUNK_OVERLAP_CHARS ?? "200");
+    const chunks = chunkText(sourceText, {
+        chunkSize: Number.isFinite(chunkSize) ? chunkSize : 1200,
+        overlap: Number.isFinite(chunkOverlap) ? chunkOverlap : 200
+    });
+    return chunks.length;
+}
+function scoreChunk(questionTerms, content) {
+    const terms = normalizeText(content)
+        .toLowerCase()
+        .split(/[^a-z0-9가-힣]+/)
+        .filter(term => term.length >= 2);
+    if (terms.length === 0) {
+        return 0;
+    }
+    const termSet = new Set(terms);
+    let matches = 0;
+    questionTerms.forEach(term => {
+        if (termSet.has(term)) {
+            matches += 1;
+        }
+    });
+    return matches;
+}
+async function buildLocalSearchHits(question, tenantId, top) {
+    if (!documentStore.isEnabled()) {
+        return [];
+    }
+    const docs = (await documentStore.listByTenant(tenantId, 200));
+    const normalizedQuestion = normalizeText(question).toLowerCase();
+    const questionTerms = new Set(normalizedQuestion.split(/[^a-z0-9가-힣]+/).filter(term => term.length >= 2));
+    const chunkSize = Number(process.env.CHUNK_SIZE_CHARS ?? "1200");
+    const chunkOverlap = Number(process.env.CHUNK_OVERLAP_CHARS ?? "200");
+    const candidates = [];
+    for (const doc of docs) {
+        const sourceText = typeof doc.sourceText === "string" ? doc.sourceText.trim() : "";
+        if (!sourceText) {
+            continue;
+        }
+        const documentId = String(doc.documentId ?? "");
+        const blobName = String(doc.blobName ?? "");
+        const fileName = blobName.split("/").pop() ?? documentId;
+        const chunks = chunkText(sourceText, {
+            chunkSize: Number.isFinite(chunkSize) ? chunkSize : 1200,
+            overlap: Number.isFinite(chunkOverlap) ? chunkOverlap : 200
+        });
+        for (const chunk of chunks) {
+            const score = questionTerms.size > 0 ? scoreChunk(questionTerms, chunk.content) : 0;
+            if (score <= 0 && questionTerms.size > 0) {
+                continue;
+            }
+            candidates.push({
+                documentId,
+                fileName,
+                blobName,
+                chunkIndex: chunk.chunkIndex,
+                content: chunk.content,
+                score
+            });
+        }
+    }
+    const sorted = candidates.sort((left, right) => {
+        const leftScore = Number(left.score ?? 0);
+        const rightScore = Number(right.score ?? 0);
+        if (leftScore !== rightScore) {
+            return rightScore - leftScore;
+        }
+        return Number(left.chunkIndex ?? 0) - Number(right.chunkIndex ?? 0);
+    });
+    if (sorted.length === 0 && docs.length > 0) {
+        const firstWithText = docs.find(doc => typeof doc.sourceText === "string" && doc.sourceText.trim());
+        if (firstWithText?.sourceText) {
+            const documentId = String(firstWithText.documentId ?? "");
+            const blobName = String(firstWithText.blobName ?? "");
+            const fileName = blobName.split("/").pop() ?? documentId;
+            const chunks = chunkText(firstWithText.sourceText, {
+                chunkSize: Number.isFinite(chunkSize) ? chunkSize : 1200,
+                overlap: Number.isFinite(chunkOverlap) ? chunkOverlap : 200
+            });
+            return chunks.slice(0, Math.max(1, top)).map(chunk => ({
+                documentId,
+                fileName,
+                blobName,
+                chunkIndex: chunk.chunkIndex,
+                content: chunk.content,
+                score: 0
+            }));
+        }
+    }
+    return sorted.slice(0, Math.max(1, top));
+}
+function buildSearchOnlyAnswer(hits) {
+    if (hits.length === 0) {
+        return "No matching tenant chunks were found. Upload documents or verify indexing status first.";
+    }
+    const lead = hits[0];
+    const leadText = normalizeText(String(lead.content ?? "")).slice(0, 280);
+    const support = hits.slice(1, 3).map(hit => {
+        const file = String(hit.fileName ?? "unknown");
+        const idx = Number(hit.chunkIndex ?? 0) + 1;
+        const snippet = normalizeText(String(hit.content ?? "")).slice(0, 140);
+        return `- ${file} chunk ${idx}: ${snippet}`;
+    });
+    const lines = [`Top chunk match: ${leadText}`];
+    if (support.length > 0) {
+        lines.push("Supporting chunks:", ...support);
+    }
+    return lines.join("\n");
+}
 const app = express();
 app.use((req, res, next) => {
     const origin = req.headers.origin;
@@ -56,6 +178,40 @@ app.get("/api/documents/catalog", async (req, res) => {
     ]);
     const searchMap = new Map(searchGroups.map(g => [String(g.documentId), g]));
     const cosmosMap = new Map(cosmosDocs.map(d => [String(d.documentId), d]));
+    // OpenSearch aggregation can occasionally miss just-indexed documents.
+    // Backfill missing search groups with per-document count queries.
+    if (searchStore.isEnabled()) {
+        const missingIds = cosmosDocs
+            .map(doc => String(doc.documentId ?? ""))
+            .filter(documentId => Boolean(documentId) && !searchMap.has(documentId));
+        if (missingIds.length > 0) {
+            const fallbackGroups = await Promise.all(missingIds.map(async (documentId) => {
+                try {
+                    const count = await searchStore.countChunksForDocument(documentId, tenantId);
+                    if (count <= 0) {
+                        return null;
+                    }
+                    const meta = cosmosMap.get(documentId);
+                    const blobName = String(meta?.blobName ?? "");
+                    const fileName = blobName.split("/").pop() ?? documentId;
+                    return {
+                        documentId,
+                        chunkCount: count,
+                        fileName,
+                        blobName
+                    };
+                }
+                catch {
+                    return null;
+                }
+            }));
+            fallbackGroups.forEach(group => {
+                if (group?.documentId) {
+                    searchMap.set(String(group.documentId), group);
+                }
+            });
+        }
+    }
     const allIds = new Set([...cosmosMap.keys(), ...searchMap.keys()]);
     const rows = Array.from(allIds).map(id => {
         const c = cosmosMap.get(id);
@@ -69,7 +225,7 @@ app.get("/api/documents/catalog", async (req, res) => {
                 ? {
                     status: c.status,
                     updatedAt: c.updatedAt,
-                    chunkCount: c.chunkCount,
+                    chunkCount: deriveChunkCount(c),
                     contentType: c.contentType,
                     sourceType: c.sourceType,
                     hasSourceText: Boolean(c.sourceText)
@@ -77,7 +233,9 @@ app.get("/api/documents/catalog", async (req, res) => {
                 : null,
             search: s
                 ? {
-                    chunkCount: s.chunkCount,
+                    chunkCount: typeof s.chunkCount === "number"
+                        ? s.chunkCount
+                        : Number(s.chunkCount ?? 0),
                     fileName: s.fileName,
                     blobName: s.blobName
                 }
@@ -351,8 +509,6 @@ app.post("/api/chat", async (req, res) => {
     if (!question?.trim())
         return res.status(400).json({ message: "question is required." });
     const openaiKey = process.env.OPENAI_API_KEY?.trim();
-    if (!openaiKey)
-        return res.status(503).json({ message: "OpenAI is not configured." });
     const chatModel = process.env.OPENAI_CHAT_MODEL ?? "gpt-4o-mini";
     const maxCompletionTokens = Number(process.env.MAX_COMPLETION_TOKENS ?? "1000");
     const top = Number(process.env.SEARCH_TOP_K ?? "3");
@@ -361,9 +517,14 @@ app.post("/api/chat", async (req, res) => {
     if (embeddingEnabled() && mode !== "keyword") {
         queryEmbedding = (await generateEmbedding(question)) ?? undefined;
     }
-    const hits = searchStore.isEnabled()
-        ? (await searchStore.searchChunks(question, tenantId, top, queryEmbedding, mode))
+    const requestedTop = Number.isFinite(top) && top > 0 ? top : 3;
+    const remoteHits = searchStore.isEnabled()
+        ? (await searchStore.searchChunks(question, tenantId, requestedTop, queryEmbedding, mode))
         : [];
+    // If OpenSearch is disabled or empty, fall back to sourceText chunks from document metadata.
+    const hits = remoteHits.length > 0
+        ? remoteHits
+        : await buildLocalSearchHits(question, tenantId, requestedTop);
     const citations = hits.map(h => ({
         documentId: h.documentId,
         fileName: h.fileName,
@@ -375,6 +536,30 @@ app.post("/api/chat", async (req, res) => {
     const contextText = hits
         .map(h => String(h.content ?? ""))
         .join("\n\n---\n\n");
+    if (!openaiKey) {
+        const answer = buildSearchOnlyAnswer(hits);
+        return res.json({
+            answer,
+            citations,
+            memory: {
+                sessionId: sessionId ?? randomUUID(),
+                summary: summaryMemory ?? "",
+                recentTurnsUsed: messages.length
+            },
+            usage: {
+                tenantId,
+                retrievedChunks: hits.length,
+                searchMode: mode,
+                vectorUsed: Boolean(queryEmbedding),
+                fallbackUsed: true,
+                responseChars: answer.length,
+                promptChars: contextText.length,
+                promptCapped: false,
+                latencyMs: 0,
+                maxCompletionTokens
+            }
+        });
+    }
     const systemPrompt = contextText
         ? `Answer based on the following context:\n\n${contextText}`
         : "You are a helpful assistant.";
