@@ -5,12 +5,14 @@ type HeroHeaderProps = {
   backendTarget: BackendTarget;
   runtimeConfigStatus: "loading" | "ok" | "error";
   runtimeConfig: RuntimeConfigSnapshot | null;
+  runtimeErrorMessage?: string;
 };
 
 export function HeroHeader({
   backendTarget,
   runtimeConfigStatus,
-  runtimeConfig
+  runtimeConfig,
+  runtimeErrorMessage
 }: HeroHeaderProps) {
   const resourceLabels = BACKEND_RESOURCE_LABELS[backendTarget];
   return (
@@ -36,10 +38,9 @@ export function HeroHeader({
             <span>Backend flags</span>
             <strong>Could not load</strong>
             <p className="hero-stat-sub">
-              Check that Functions is reachable at{" "}
-              <code className="inline-code">VITE_UPLOAD_API_BASE_URL</code>.
-              Upload and chat may also need{" "}
-              <code className="inline-code">VITE_UPLOAD_API_KEY</code>.
+              {runtimeErrorMessage?.trim()
+                ? runtimeErrorMessage
+                : "Check backend reachability and API key configuration."}
             </p>
           </div>
         ) : (

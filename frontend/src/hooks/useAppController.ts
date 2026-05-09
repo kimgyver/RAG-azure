@@ -123,6 +123,27 @@ function getApiKeys() {
   return { nodeApiKey, pythonApiKey, awsApiKey };
 }
 
+function resolveFetchErrorMessage(
+  error: unknown,
+  backendTarget: BackendTarget,
+  apiBaseUrl: string,
+  fallback: string
+): string {
+  const message = error instanceof Error ? error.message : fallback;
+  const pageIsHttps = window.location.protocol === "https:";
+  const apiIsHttp = apiBaseUrl.startsWith("http://");
+
+  if (backendTarget === "aws-python" && pageIsHttps && apiIsHttp) {
+    return `Mixed Content blocked: HTTPS page cannot call HTTP API (${apiBaseUrl}). Expose AWS Python backend over HTTPS (domain + TLS) or use local HTTP dev page.`;
+  }
+
+  if (message === "Failed to fetch") {
+    return `Network request failed for ${apiBaseUrl}. Check CORS, protocol (HTTP/HTTPS), and backend availability.`;
+  }
+
+  return message;
+}
+
 export function useAppController() {
   const defaultBackendTarget = useMemo(getDefaultBackendTarget, []);
   const initialTenantId = TENANT_OPTIONS_BY_BACKEND[defaultBackendTarget][0];
@@ -164,6 +185,8 @@ export function useAppController() {
       runtimeConfigStatus: "loading"
     }))
   );
+  const [runtimeErrorMessageByBackend, setRuntimeErrorMessageByBackend] =
+    useState<Record<BackendTarget, string>>(() => buildBackendRecord(() => ""));
   const [catalogStateByBackend, setCatalogStateByBackend] = useState<
     Record<BackendTarget, BackendCatalogState>
   >(() =>
@@ -271,8 +294,12 @@ export function useAppController() {
       }));
       setTenantErrorByBackend(prev => ({ ...prev, [activeBackend]: "" }));
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Could not load catalog.";
+      const message = resolveFetchErrorMessage(
+        error,
+        activeBackend,
+        apiBaseUrl,
+        "Could not load catalog."
+      );
       setCatalogStateByBackend(prev => ({
         ...prev,
         [activeBackend]: {
@@ -317,6 +344,10 @@ export function useAppController() {
           runtimeConfigStatus: "loading"
         }
       }));
+      setRuntimeErrorMessageByBackend(prev => ({
+        ...prev,
+        [activeBackend]: ""
+      }));
 
       try {
         const response = await fetch(`${apiBaseUrl}/flags/deployment`, {
@@ -336,8 +367,12 @@ export function useAppController() {
               runtimeConfigStatus: "ok"
             }
           }));
+          setRuntimeErrorMessageByBackend(prev => ({
+            ...prev,
+            [activeBackend]: ""
+          }));
         }
-      } catch {
+      } catch (error) {
         if (!cancelled) {
           setRuntimeStateByBackend(prev => ({
             ...prev,
@@ -345,6 +380,15 @@ export function useAppController() {
               runtimeConfig: null,
               runtimeConfigStatus: "error"
             }
+          }));
+          setRuntimeErrorMessageByBackend(prev => ({
+            ...prev,
+            [activeBackend]: resolveFetchErrorMessage(
+              error,
+              activeBackend,
+              apiBaseUrl,
+              "Could not load backend flags."
+            )
           }));
         }
       }
@@ -1007,6 +1051,7 @@ export function useAppController() {
     apiBaseUrl,
     runtimeConfig: runtimeState.runtimeConfig,
     runtimeConfigStatus: runtimeState.runtimeConfigStatus,
+    runtimeErrorMessage: runtimeErrorMessageByBackend[backendTarget],
     searchOnlyMode,
     uploadState: processingState.uploadState,
     uploadMessage: processingState.uploadMessage,

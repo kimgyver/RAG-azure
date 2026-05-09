@@ -14,6 +14,7 @@ function App() {
         backendTarget={controller.backendTarget}
         runtimeConfigStatus={controller.runtimeConfigStatus}
         runtimeConfig={controller.runtimeConfig}
+        runtimeErrorMessage={controller.runtimeErrorMessage}
       />
 
       <TenantContextBar
