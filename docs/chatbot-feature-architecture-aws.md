@@ -21,11 +21,11 @@ Vite / Static Hosting]
   class A,B frontend;
 
   subgraph Backend
-      C["AWS API Layer<br/>- Node API (Lambda)<br/>- Python API (EC2 + Docker + FastAPI)"]
-      D["Upload Create API<br/>- Validate tenant and file metadata<br/>- Issue signed upload URL"]
-      E["Chat API<br/>- Validate tenant<br/>- Retrieve context from OpenSearch<br/>- Build prompt with citations<br/>- Generate final answer"]
-      F["Blob Validate / Queue Enqueue<br/>- Verify uploaded object<br/>- Publish processing job to SQS"]
-      G["Processing Worker<br/>- Extract text / OCR<br/>- Chunk content<br/>- Generate embeddings<br/>- Update metadata and index"]
+      C["AWS API Layer<br/>- Node API (Lambda)<br/>- Python API (EC2 + Docker<br/> + FastAPI)"]
+      D["Upload Create API<br/>- Validate tenant and file <br/>metadata<br/>- Issue signed upload URL"]
+      E["Chat API<br/>- Validate tenant<br/>- Retrieve from OpenSearch<br/>- Build prompt with context<br/>- Generate final answer"]
+      F["Blob Validate / Queue<br/> Enqueue<br/>- Verify uploaded object<br/>- Publish job to SQS"]
+      G["Processing Worker<br/>- Extract text / OCR<br/>- Chunk content<br/>- Generate embeddings<br/>- Update metadata/index"]
       B -->|API request| C
       C -->|Upload flow| D
       C -->|Chat flow| E
