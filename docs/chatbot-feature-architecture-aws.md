@@ -21,22 +21,11 @@ Vite / Static Hosting]
   class A,B frontend;
 
   subgraph Backend
-      C[AWS Python API
-EC2 + Docker + FastAPI]
-      D[Upload Create API
-signed URL 발급]
-      E[Chat API
-tenant validation
-search retrieval
-prompt assembly
-answer generation]
-      F[Blob Validate / Queue Enqueue
-업로드 확인 후 SQS 발행]
-      G[Processing Worker
-text extract / OCR
-chunking
-embedding
-metadata update]
+      C["AWS API Layer<br/>- Node API (Lambda)<br/>- Python API (EC2 + Docker + FastAPI)"]
+      D["Upload Create API<br/>- Validate tenant and file metadata<br/>- Issue signed upload URL"]
+      E["Chat API<br/>- Validate tenant<br/>- Retrieve context from OpenSearch<br/>- Build prompt with citations<br/>- Generate final answer"]
+      F["Blob Validate / Queue Enqueue<br/>- Verify uploaded object<br/>- Publish processing job to SQS"]
+      G["Processing Worker<br/>- Extract text / OCR<br/>- Chunk content<br/>- Generate embeddings<br/>- Update metadata and index"]
       B -->|API request| C
       C -->|Upload flow| D
       C -->|Chat flow| E
