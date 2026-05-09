@@ -160,7 +160,11 @@ jobs:
           AWS_PYTHON_BASE_FROM_STATE=""
           if [ -f "infra/aws/terraform.tfstate" ]; then
             AWS_BASE_FROM_STATE="$(jq -r '.outputs.node_api_url.value // empty' infra/aws/terraform.tfstate 2>/dev/null || true)"
-            AWS_PYTHON_BASE_FROM_STATE="$(jq -r '.outputs.ec2_public_ip.value // empty' infra/aws/terraform.tfstate 2>/dev/null || true)"
+            AWS_PYTHON_BASE_FROM_STATE="$(jq -r '.outputs.python_api_url_https.value // empty' infra/aws/terraform.tfstate 2>/dev/null || true)"
+
+            if [ -z "$AWS_PYTHON_BASE_FROM_STATE" ]; then
+              AWS_PYTHON_BASE_FROM_STATE="$(jq -r '.outputs.ec2_public_ip.value // empty' infra/aws/terraform.tfstate 2>/dev/null || true)"
+            fi
 
             AWS_BASE_FROM_STATE="${AWS_BASE_FROM_STATE%/}"
             if [ -n "$AWS_BASE_FROM_STATE" ] && [[ "$AWS_BASE_FROM_STATE" != */api ]]; then

@@ -43,6 +43,11 @@ output "node_api_url" {
   value       = aws_apigatewayv2_stage.default.invoke_url
 }
 
+output "python_api_url_https" {
+  description = "Python EC2 backend HTTPS API Gateway endpoint (use this from HTTPS frontends)"
+  value       = "${aws_apigatewayv2_stage.python_default.invoke_url}api"
+}
+
 output "node_http_function_name" {
   description = "Lambda function name for Node.js HTTP handler"
   value       = aws_lambda_function.node_http.function_name

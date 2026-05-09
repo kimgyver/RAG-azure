@@ -631,3 +631,37 @@ resource "aws_lambda_permission" "apigw" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.node_http.execution_arn}/*/*"
 }
+
+# ── API Gateway v2 (HTTP API) — HTTPS proxy for Python EC2 backend ──────────
+resource "aws_apigatewayv2_api" "python_http" {
+  name          = "${local.name_prefix}-python-api"
+  protocol_type = "HTTP"
+
+  cors_configuration {
+    allow_origins = ["*"]
+    allow_methods = ["*"]
+    allow_headers = ["*"]
+  }
+
+  tags = local.common_tags
+}
+
+resource "aws_apigatewayv2_integration" "python_http" {
+  api_id             = aws_apigatewayv2_api.python_http.id
+  integration_type   = "HTTP_PROXY"
+  integration_method = "ANY"
+  integration_uri    = "http://${aws_eip.backend.public_ip}"
+}
+
+resource "aws_apigatewayv2_route" "python_default" {
+  api_id    = aws_apigatewayv2_api.python_http.id
+  route_key = "$default"
+  target    = "integrations/${aws_apigatewayv2_integration.python_http.id}"
+}
+
+resource "aws_apigatewayv2_stage" "python_default" {
+  api_id      = aws_apigatewayv2_api.python_http.id
+  name        = "$default"
+  auto_deploy = true
+  tags        = local.common_tags
+}

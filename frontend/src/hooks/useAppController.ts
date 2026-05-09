@@ -90,7 +90,8 @@ function getApiBaseUrls() {
   // Production safety defaults: AWS targets must never fall back to Azure Function URL.
   const defaultAwsNodeBase =
     "https://5xvuxdf5dl.execute-api.ap-southeast-2.amazonaws.com/api";
-  const defaultAwsPythonBase = "http://15.134.161.145/api";
+  const defaultAwsPythonBase =
+    "https://wprvx1aiba.execute-api.ap-southeast-2.amazonaws.com/api";
 
   const configuredAwsBase = (
     import.meta.env.VITE_AWS_API_BASE_URL?.trim() || defaultAwsNodeBase
@@ -106,7 +107,9 @@ function getApiBaseUrls() {
       : configuredAwsBase;
   const awsPythonBase =
     configuredAwsPythonBase.includes("azurewebsites.net") ||
-    configuredAwsPythonBase.includes("azurecontainerapps.io")
+    configuredAwsPythonBase.includes("azurecontainerapps.io") ||
+    (window.location.protocol === "https:" &&
+      configuredAwsPythonBase.startsWith("http://"))
       ? defaultAwsPythonBase
       : configuredAwsPythonBase;
 
