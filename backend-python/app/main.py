@@ -72,7 +72,8 @@ cors_origins = [
     if item.strip()
 ]
 cors_origin_regex = os.getenv(
-    "CORS_ALLOW_ORIGIN_REGEX", r"^https?://(localhost|127\.0\.0\.1)(:\\d+)?$"
+    "CORS_ALLOW_ORIGIN_REGEX",
+    r"^https?://((localhost|127\.0\.0\.1)(:\\d+)?|.*\.azurestaticapps\.net)$",
 ).strip() or None
 
 app.add_middleware(
