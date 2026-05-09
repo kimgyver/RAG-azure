@@ -24,6 +24,10 @@ export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   citations?: string[];
+  usage?: {
+    tenantId: string;
+    retrievedChunks: number;
+  };
 };
 
 export type ChatResponse = {

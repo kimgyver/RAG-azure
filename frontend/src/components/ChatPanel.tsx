@@ -70,7 +70,15 @@ export function ChatPanel({
             </span>
             <p>{message.content}</p>
             {message.citations?.length ? (
-              <small>Sources: {message.citations.join(" / ")}</small>
+              <div className="message-meta">
+                Sources: {message.citations.join(" / ")}
+              </div>
+            ) : null}
+            {message.usage?.retrievedChunks != null ? (
+              <div className="message-meta">
+                Retrieved {message.usage.retrievedChunks} chunk
+                {message.usage.retrievedChunks !== 1 ? "s" : ""}
+              </div>
             ) : null}
           </article>
         ))}

@@ -878,7 +878,8 @@ export function useAppController() {
         content: payload.answer,
         citations: payload.citations.map(
           citation => `${citation.fileName} · chunk ${citation.chunkIndex + 1}`
-        )
+        ),
+        usage: payload.usage
       };
 
       setChatMessagesByTenant(prev => ({

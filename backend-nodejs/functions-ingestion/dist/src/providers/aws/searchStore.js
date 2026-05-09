@@ -38,9 +38,12 @@ function client() {
 const INDEX = () => process.env.OPENSEARCH_INDEX_NAME ?? "rag-chunks";
 export class AwsSearchStoreProvider {
     isEnabled() {
-        return Boolean(process.env.OPENSEARCH_ENDPOINT);
+        return ((process.env.SEARCH_ENABLED ?? "false").toLowerCase() === "true" &&
+            Boolean(process.env.OPENSEARCH_ENDPOINT));
     }
     async indexChunks(chunks) {
+        if (!this.isEnabled())
+            return false;
         if (!chunks.length)
             return false;
         const body = chunks.flatMap(doc => [
@@ -51,6 +54,8 @@ export class AwsSearchStoreProvider {
         return true;
     }
     async searchChunks(query, tenantId, top = 3, queryEmbedding, mode = "hybrid") {
+        if (!this.isEnabled())
+            return [];
         const mustFilter = { term: { "tenantId.keyword": tenantId } };
         let body;
         if (mode === "vector" && queryEmbedding) {
@@ -98,6 +103,8 @@ export class AwsSearchStoreProvider {
         }
     }
     async deleteChunksForDocument(documentId, tenantId) {
+        if (!this.isEnabled())
+            return 0;
         try {
             const response = await client().deleteByQuery({
                 index: INDEX(),
@@ -122,6 +129,8 @@ export class AwsSearchStoreProvider {
         }
     }
     async countChunksForDocument(documentId, tenantId) {
+        if (!this.isEnabled())
+            return 0;
         try {
             const response = await client().count({
                 index: INDEX(),
@@ -146,6 +155,8 @@ export class AwsSearchStoreProvider {
         }
     }
     async listDocumentGroups(tenantId) {
+        if (!this.isEnabled())
+            return [];
         try {
             const response = await client().search({
                 index: INDEX(),

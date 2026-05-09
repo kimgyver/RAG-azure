@@ -53,12 +53,6 @@ jobs:
             --function-name "${{ env.TF_PREFIX }}-node-http" \
             --zip-file fileb://backend-nodejs/functions-ingestion/dist-lambda/http.zip \
             --region "${{ vars.AWS_REGION }}"
-          
-          # Sync environment variables from Terraform state
-          aws lambda update-function-configuration \
-            --function-name "${{ env.TF_PREFIX }}-node-http" \
-            --environment "Variables={ALLOWED_TENANT_IDS=tenant-aws-1\,tenant-aws-2,CLOUD_PROVIDER=aws,SEARCH_ENABLED=true,OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}}" \
-            --region "${{ vars.AWS_REGION }}" || true
 
       - name: Deploy Worker Lambda (code + config)
         run: |
@@ -66,12 +60,6 @@ jobs:
             --function-name "${{ env.TF_PREFIX }}-node-worker" \
             --zip-file fileb://backend-nodejs/functions-ingestion/dist-lambda/worker.zip \
             --region "${{ vars.AWS_REGION }}"
-          
-          # Sync environment variables from Terraform state
-          aws lambda update-function-configuration \
-            --function-name "${{ env.TF_PREFIX }}-node-worker" \
-            --environment "Variables={ALLOWED_TENANT_IDS=tenant-aws-1\,tenant-aws-2,CLOUD_PROVIDER=aws,SEARCH_ENABLED=true,OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}}" \
-            --region "${{ vars.AWS_REGION }}" || true
 
       - name: Wait for updates
         run: |

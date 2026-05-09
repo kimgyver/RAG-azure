@@ -334,8 +334,8 @@ def chat(payload: ChatRequest) -> Dict[str, Any]:
 
     citations, snippets = [], []
     for score, chunk in scored[:5]:
-        snippet = chunk.content[:280]
-        snippets.append(snippet)
+        snippet = chunk.content[:280]  # display-only truncation
+        snippets.append(chunk.content)  # full content for LLM context
         citations.append({
             "documentId": chunk.documentId, "fileName": chunk.fileName,
             "blobName": chunk.blobName, "chunkIndex": chunk.chunkIndex,

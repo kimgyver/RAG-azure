@@ -1,5 +1,7 @@
 import type { BackendTarget, RuntimeConfigSnapshot } from "../types/app";
 
+export type { BackendTarget } from "../types/app";
+
 export const TENANT_OPTIONS_BY_BACKEND: Record<
   BackendTarget,
   [string, string]
@@ -136,4 +138,41 @@ export function buildTenantChatSessionId(inputTenantId: string): string {
     .replace(/[^a-z0-9-]+/g, "-")
     .replace(/^-+|-+$/g, "");
   return `web-${normalized || "tenant"}`;
+}
+
+export function resolveFetchErrorMessage(
+  error: unknown,
+  backendTarget: BackendTarget,
+  apiBaseUrl: string,
+  fallback: string
+): string {
+  const message = error instanceof Error ? error.message : fallback;
+  const pageIsHttps = window.location.protocol === "https:";
+  const apiIsHttp = apiBaseUrl.startsWith("http://");
+
+  if (backendTarget === "aws-python" && pageIsHttps && apiIsHttp) {
+    return `Mixed Content blocked: HTTPS page cannot call HTTP API (${apiBaseUrl}). Expose AWS Python backend over HTTPS (domain + TLS) or use local HTTP dev page.`;
+  }
+
+  if (message === "Failed to fetch") {
+    return `Network request failed for ${apiBaseUrl}. Check CORS, protocol (HTTP/HTTPS), and backend availability.`;
+  }
+
+  return message;
+}
+
+export const CHAT_RETRYABLE_STATUS = new Set([429, 502, 503, 504]);
+
+export function isRetryableChatFetchError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("failed to fetch") ||
+    message.includes("networkerror") ||
+    message.includes("load failed") ||
+    message.includes("timeout") ||
+    message.includes("network request failed")
+  );
 }
