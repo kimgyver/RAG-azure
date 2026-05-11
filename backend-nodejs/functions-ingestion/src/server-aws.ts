@@ -264,8 +264,9 @@ app.get("/api/documents/catalog", async (req: Request, res: Response) => {
       ? documentStore.listByTenant(tenantId, 200)
       : Promise.resolve([]);
 
-    let searchAvailable = searchStore.isEnabled();
-    const searchGroupsPromise = searchAvailable
+    const searchConfigured = searchStore.isEnabled();
+    let searchAvailable = searchConfigured;
+    const searchGroupsPromise = searchConfigured
       ? searchStore.listDocumentGroups(tenantId).catch(error => {
           console.warn("[catalog] OpenSearch listDocumentGroups failed", {
             tenantId,
@@ -401,7 +402,7 @@ app.get("/api/documents/catalog", async (req: Request, res: Response) => {
       documents: rows,
       sources: {
         cosmos: documentStore.isEnabled(),
-        search: searchAvailable
+        search: searchConfigured
       }
     });
   } catch (error) {
