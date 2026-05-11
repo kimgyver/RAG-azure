@@ -78,9 +78,15 @@ def persistent_store_enabled() -> bool:
 
 
 def aws_search_enabled() -> bool:
-    """True when OpenSearch/search is available.
-    Falls back to SEARCH_ENABLED env var; defaults True for AWS.
+    """True when OpenSearch/search is available in AWS.
+    Defaults to True if OPENSEARCH_ENDPOINT is present, unless explicitly disabled.
     """
-    if cloud_provider() == "aws":
-        return bool_env("SEARCH_ENABLED", True)
-    return search_enabled()
+    endpoint = os.getenv("OPENSEARCH_ENDPOINT", "").strip()
+    if not endpoint:
+        return False
+    
+    search_enabled_env = os.getenv("SEARCH_ENABLED", "").strip().lower()
+    if search_enabled_env == "false":
+        return False
+    
+    return bool(endpoint)

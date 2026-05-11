@@ -47,14 +47,22 @@ const INDEX = () => process.env.OPENSEARCH_INDEX_NAME ?? "rag-chunks";
 
 export class AwsSearchStoreProvider implements SearchStoreProvider {
   isEnabled(): boolean {
-    const cloudProvider = (process.env.CLOUD_PROVIDER ?? "azure")
-      .trim()
-      .toLowerCase();
-    const defaultFlag = cloudProvider === "aws" ? "true" : "false";
-    return (
-      (process.env.SEARCH_ENABLED ?? defaultFlag).toLowerCase() === "true" &&
-      Boolean(process.env.OPENSEARCH_ENDPOINT)
-    );
+    // If OPENSEARCH_ENDPOINT is present, default SEARCH_ENABLED to true for AWS.
+    // Otherwise, respect explicit SEARCH_ENABLED or default to false.
+    const endpoint = process.env.OPENSEARCH_ENDPOINT?.trim();
+    if (!endpoint) {
+      return false;
+    }
+
+    const hasEndpoint = Boolean(endpoint);
+    const searchEnabledEnv = process.env.SEARCH_ENABLED?.trim().toLowerCase();
+    
+    // If endpoint exists and SEARCH_ENABLED is not explicitly false, enable search.
+    if (searchEnabledEnv === "false") {
+      return false;
+    }
+    
+    return hasEndpoint;
   }
 
   async indexChunks(chunks: Record<string, unknown>[]): Promise<boolean> {
