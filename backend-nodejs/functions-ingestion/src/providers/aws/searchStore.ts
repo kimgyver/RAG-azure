@@ -56,12 +56,12 @@ export class AwsSearchStoreProvider implements SearchStoreProvider {
 
     const hasEndpoint = Boolean(endpoint);
     const searchEnabledEnv = process.env.SEARCH_ENABLED?.trim().toLowerCase();
-    
+
     // If endpoint exists and SEARCH_ENABLED is not explicitly false, enable search.
     if (searchEnabledEnv === "false") {
       return false;
     }
-    
+
     return hasEndpoint;
   }
 
