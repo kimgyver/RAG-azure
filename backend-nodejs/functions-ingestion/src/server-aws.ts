@@ -34,6 +34,7 @@ type AwsDocumentRecord = Record<string, unknown> & {
   documentId?: string;
   tenantId?: string;
   blobName?: string;
+  createdAt?: string;
   status?: string;
   updatedAt?: string;
   chunkCount?: number;
@@ -258,136 +259,158 @@ app.get("/api/documents/catalog", async (req: Request, res: Response) => {
   if (!isTenantAllowed(tenantId))
     return res.status(403).json({ message: tenantNotAllowedMessage() });
 
-  const [cosmosDocs, searchGroups] = await Promise.all([
-    documentStore.isEnabled()
+  try {
+    const cosmosDocsPromise = documentStore.isEnabled()
       ? documentStore.listByTenant(tenantId, 200)
-      : Promise.resolve([]),
-    searchStore.isEnabled()
-      ? searchStore.listDocumentGroups(tenantId)
-      : Promise.resolve([])
-  ]);
+      : Promise.resolve([]);
 
-  const searchMap = new Map(
-    (searchGroups as AwsSearchGroup[]).map(g => [String(g.documentId), g])
-  );
-  const cosmosMap = new Map(
-    (cosmosDocs as AwsDocumentRecord[]).map(d => [String(d.documentId), d])
-  );
+    let searchAvailable = searchStore.isEnabled();
+    const searchGroupsPromise = searchAvailable
+      ? searchStore.listDocumentGroups(tenantId).catch(error => {
+          console.warn("[catalog] OpenSearch listDocumentGroups failed", {
+            tenantId,
+            message: error instanceof Error ? error.message : String(error)
+          });
+          searchAvailable = false;
+          return [];
+        })
+      : Promise.resolve([]);
 
-  // OpenSearch aggregation can occasionally miss just-indexed documents.
-  // Backfill missing search groups with per-document count queries.
-  if (searchStore.isEnabled()) {
-    const missingIds = (cosmosDocs as AwsDocumentRecord[])
-      .map(doc => String(doc.documentId ?? ""))
-      .filter(documentId => Boolean(documentId) && !searchMap.has(documentId));
+    const [cosmosDocs, searchGroups] = await Promise.all([
+      cosmosDocsPromise,
+      searchGroupsPromise
+    ]);
 
-    if (missingIds.length > 0) {
-      const fallbackGroups = await Promise.all(
-        missingIds.map(async documentId => {
-          try {
-            const count = await searchStore.countChunksForDocument(
-              documentId,
-              tenantId
-            );
-            if (count <= 0) {
+    const searchMap = new Map(
+      (searchGroups as AwsSearchGroup[]).map(g => [String(g.documentId), g])
+    );
+    const cosmosMap = new Map(
+      (cosmosDocs as AwsDocumentRecord[]).map(d => [String(d.documentId), d])
+    );
+
+    // OpenSearch aggregation can occasionally miss just-indexed documents.
+    // Backfill missing search groups with per-document count queries.
+    if (searchAvailable) {
+      const missingIds = (cosmosDocs as AwsDocumentRecord[])
+        .map(doc => String(doc.documentId ?? ""))
+        .filter(
+          documentId => Boolean(documentId) && !searchMap.has(documentId)
+        );
+
+      if (missingIds.length > 0) {
+        const fallbackGroups = await Promise.all(
+          missingIds.map(async documentId => {
+            try {
+              const count = await searchStore.countChunksForDocument(
+                documentId,
+                tenantId
+              );
+              if (count <= 0) {
+                return null;
+              }
+
+              const meta = cosmosMap.get(documentId);
+              const blobName = String(meta?.blobName ?? "");
+              const fileName = blobName.split("/").pop() ?? documentId;
+
+              return {
+                documentId,
+                chunkCount: count,
+                fileName,
+                blobName
+              } satisfies AwsSearchGroup;
+            } catch {
               return null;
             }
+          })
+        );
 
-            const meta = cosmosMap.get(documentId);
-            const blobName = String(meta?.blobName ?? "");
-            const fileName = blobName.split("/").pop() ?? documentId;
-
-            return {
-              documentId,
-              chunkCount: count,
-              fileName,
-              blobName
-            } satisfies AwsSearchGroup;
-          } catch {
-            return null;
+        fallbackGroups.forEach(group => {
+          if (group?.documentId) {
+            searchMap.set(String(group.documentId), group);
           }
-        })
+        });
+      }
+    }
+
+    const allIds = new Set([...cosmosMap.keys(), ...searchMap.keys()]);
+    const rows = Array.from(allIds).map(id => {
+      const c = cosmosMap.get(id);
+      const s = searchMap.get(id);
+      return {
+        documentId: id,
+        tenantId,
+        fileName: c?.blobName?.split("/").pop() ?? s?.fileName ?? id,
+        blobName: c?.blobName ?? s?.blobName ?? "",
+        cosmos: c
+          ? {
+              status: c.status,
+              updatedAt: c.updatedAt,
+              chunkCount: deriveChunkCount(c),
+              contentType: c.contentType,
+              sourceType: c.sourceType,
+              hasSourceText: Boolean(c.sourceText)
+            }
+          : null,
+        search: s
+          ? {
+              chunkCount:
+                typeof s.chunkCount === "number"
+                  ? s.chunkCount
+                  : Number(s.chunkCount ?? 0),
+              fileName: s.fileName,
+              blobName: s.blobName
+            }
+          : null
+      };
+    });
+
+    const timestampFromIso = (value: string): number => {
+      if (!value) {
+        return 0;
+      }
+      const parsed = Date.parse(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+
+    rows.sort((left, right) => {
+      const leftCreated = timestampFromIso(
+        String(
+          cosmosMap.get(left.documentId)?.createdAt ??
+            cosmosMap.get(left.documentId)?.updatedAt ??
+            ""
+        )
+      );
+      const rightCreated = timestampFromIso(
+        String(
+          cosmosMap.get(right.documentId)?.createdAt ??
+            cosmosMap.get(right.documentId)?.updatedAt ??
+            ""
+        )
       );
 
-      fallbackGroups.forEach(group => {
-        if (group?.documentId) {
-          searchMap.set(String(group.documentId), group);
-        }
-      });
-    }
-  }
+      if (leftCreated !== rightCreated) {
+        return rightCreated - leftCreated;
+      }
 
-  const allIds = new Set([...cosmosMap.keys(), ...searchMap.keys()]);
-  const rows = Array.from(allIds).map(id => {
-    const c = cosmosMap.get(id);
-    const s = searchMap.get(id);
-    return {
-      documentId: id,
+      return String(left.documentId).localeCompare(String(right.documentId));
+    });
+
+    res.json({
       tenantId,
-      fileName: c?.blobName?.split("/").pop() ?? s?.fileName ?? id,
-      blobName: c?.blobName ?? s?.blobName ?? "",
-      cosmos: c
-        ? {
-            status: c.status,
-            updatedAt: c.updatedAt,
-            chunkCount: deriveChunkCount(c),
-            contentType: c.contentType,
-            sourceType: c.sourceType,
-            hasSourceText: Boolean(c.sourceText)
-          }
-        : null,
-      search: s
-        ? {
-            chunkCount:
-              typeof s.chunkCount === "number"
-                ? s.chunkCount
-                : Number(s.chunkCount ?? 0),
-            fileName: s.fileName,
-            blobName: s.blobName
-          }
-        : null
-    };
-  });
-
-  const timestampFromIso = (value: string): number => {
-    if (!value) {
-      return 0;
-    }
-    const parsed = Date.parse(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  };
-
-  rows.sort((left, right) => {
-    const leftCreated = timestampFromIso(
-      String(
-        cosmosMap.get(left.documentId)?.createdAt ??
-          cosmosMap.get(left.documentId)?.updatedAt ??
-          ""
-      )
-    );
-    const rightCreated = timestampFromIso(
-      String(
-        cosmosMap.get(right.documentId)?.createdAt ??
-          cosmosMap.get(right.documentId)?.updatedAt ??
-          ""
-      )
-    );
-
-    if (leftCreated !== rightCreated) {
-      return rightCreated - leftCreated;
-    }
-
-    return String(left.documentId).localeCompare(String(right.documentId));
-  });
-
-  res.json({
-    tenantId,
-    documents: rows,
-    sources: {
-      cosmos: documentStore.isEnabled(),
-      search: searchStore.isEnabled()
-    }
-  });
+      documents: rows,
+      sources: {
+        cosmos: documentStore.isEnabled(),
+        search: searchAvailable
+      }
+    });
+  } catch (error) {
+    console.error("[catalog] failed to build document catalog", {
+      tenantId,
+      message: error instanceof Error ? error.message : String(error)
+    });
+    res.status(500).json({ message: "Failed to load document catalog." });
+  }
 });
 
 // ── Document status ───────────────────────────────────────────────────────────
