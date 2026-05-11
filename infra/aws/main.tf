@@ -491,10 +491,9 @@ resource "aws_lambda_function" "node_http" {
       S3_BUCKET_NAME        = aws_s3_bucket.uploads.id
       DYNAMODB_TABLE_NAME   = aws_dynamodb_table.documents.name
       SQS_QUEUE_URL         = aws_sqs_queue.documents.url
-      OPENSEARCH_ENDPOINT   = ""
+      OPENSEARCH_ENDPOINT   = local.opensearch_endpoint
       OPENSEARCH_INDEX_NAME = "rag-chunks"
       ALLOWED_TENANT_IDS    = var.allowed_tenant_ids
-      SEARCH_ENABLED        = "false"
       OPENAI_API_KEY        = var.openai_api_key
     }
   }
@@ -521,10 +520,9 @@ resource "aws_lambda_function" "node_worker" {
       S3_BUCKET_NAME        = aws_s3_bucket.uploads.id
       DYNAMODB_TABLE_NAME   = aws_dynamodb_table.documents.name
       SQS_QUEUE_URL         = aws_sqs_queue.documents.url
-      OPENSEARCH_ENDPOINT   = ""
+      OPENSEARCH_ENDPOINT   = local.opensearch_endpoint
       OPENSEARCH_INDEX_NAME = "rag-chunks"
       ALLOWED_TENANT_IDS    = var.allowed_tenant_ids
-      SEARCH_ENABLED        = "false"
       OPENAI_API_KEY        = var.openai_api_key
     }
   }

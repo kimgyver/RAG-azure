@@ -33,8 +33,10 @@ async function listDocumentCatalogHandler(request, context) {
             listSearchDocumentGroups(tenantId, 4000)
         ]);
         const byId = new Map();
+        const cosmosCreatedAtById = new Map();
         for (const c of cosmosDocs) {
             const fileName = c.blobName?.split("/").pop() ?? c.documentId;
+            cosmosCreatedAtById.set(c.documentId, c.createdAt ?? c.updatedAt ?? "");
             byId.set(c.documentId, {
                 documentId: c.documentId,
                 tenantId: c.tenantId,
@@ -78,11 +80,18 @@ async function listDocumentCatalogHandler(request, context) {
                 });
             }
         }
+        const timestampFromIso = (value) => {
+            if (!value) {
+                return 0;
+            }
+            const parsed = Date.parse(value);
+            return Number.isFinite(parsed) ? parsed : 0;
+        };
         const documents = [...byId.values()].sort((a, b) => {
-            const ta = a.cosmos?.updatedAt ?? "";
-            const tb = b.cosmos?.updatedAt ?? "";
+            const ta = timestampFromIso(cosmosCreatedAtById.get(a.documentId) ?? "");
+            const tb = timestampFromIso(cosmosCreatedAtById.get(b.documentId) ?? "");
             if (ta !== tb) {
-                return tb.localeCompare(ta);
+                return tb - ta;
             }
             return a.documentId.localeCompare(b.documentId);
         });
