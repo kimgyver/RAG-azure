@@ -151,6 +151,7 @@ def list_document_catalog(tenantId: str = Query(...)) -> Dict[str, Any]:
                 "blobName": c.get("blobName") or "",
                 "cosmos": {
                     "status": c.get("status"),
+                    "createdAt": c.get("createdAt"),
                     "updatedAt": c.get("updatedAt"),
                     "chunkCount": c.get("chunkCount"),
                     "contentType": c.get("contentType"),
@@ -188,9 +189,13 @@ def list_document_catalog(tenantId: str = Query(...)) -> Dict[str, Any]:
                     "search": search_doc,
                 }
 
+    def _sort_created_ts(row: Dict[str, Any]) -> str:
+        cosmos = row.get("cosmos") or {}
+        return (cosmos.get("createdAt") or cosmos.get("updatedAt") or "")
+
     documents = sorted(
         by_id.values(),
-        key=lambda r: ((r.get("cosmos") or {}).get("updatedAt") or "", r.get("documentId") or ""),
+        key=lambda r: (_sort_created_ts(r), r.get("documentId") or ""),
         reverse=True,
     )
     return {

@@ -78,9 +78,11 @@ async function listDocumentCatalogHandler(
     ]);
 
     const byId = new Map<string, CatalogDocumentRow>();
+    const cosmosCreatedAtById = new Map<string, string>();
 
     for (const c of cosmosDocs) {
       const fileName = c.blobName?.split("/").pop() ?? c.documentId;
+      cosmosCreatedAtById.set(c.documentId, c.createdAt ?? c.updatedAt ?? "");
       byId.set(c.documentId, {
         documentId: c.documentId,
         tenantId: c.tenantId,
@@ -125,11 +127,19 @@ async function listDocumentCatalogHandler(
       }
     }
 
+    const timestampFromIso = (value: string): number => {
+      if (!value) {
+        return 0;
+      }
+      const parsed = Date.parse(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+
     const documents = [...byId.values()].sort((a, b) => {
-      const ta = a.cosmos?.updatedAt ?? "";
-      const tb = b.cosmos?.updatedAt ?? "";
+      const ta = timestampFromIso(cosmosCreatedAtById.get(a.documentId) ?? "");
+      const tb = timestampFromIso(cosmosCreatedAtById.get(b.documentId) ?? "");
       if (ta !== tb) {
-        return tb.localeCompare(ta);
+        return tb - ta;
       }
       return a.documentId.localeCompare(b.documentId);
     });

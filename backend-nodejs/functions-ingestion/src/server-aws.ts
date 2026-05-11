@@ -349,6 +349,37 @@ app.get("/api/documents/catalog", async (req: Request, res: Response) => {
     };
   });
 
+  const timestampFromIso = (value: string): number => {
+    if (!value) {
+      return 0;
+    }
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  rows.sort((left, right) => {
+    const leftCreated = timestampFromIso(
+      String(
+        cosmosMap.get(left.documentId)?.createdAt ??
+          cosmosMap.get(left.documentId)?.updatedAt ??
+          ""
+      )
+    );
+    const rightCreated = timestampFromIso(
+      String(
+        cosmosMap.get(right.documentId)?.createdAt ??
+          cosmosMap.get(right.documentId)?.updatedAt ??
+          ""
+      )
+    );
+
+    if (leftCreated !== rightCreated) {
+      return rightCreated - leftCreated;
+    }
+
+    return String(left.documentId).localeCompare(String(right.documentId));
+  });
+
   res.json({
     tenantId,
     documents: rows,

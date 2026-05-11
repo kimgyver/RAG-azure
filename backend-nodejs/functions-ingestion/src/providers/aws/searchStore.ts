@@ -47,8 +47,12 @@ const INDEX = () => process.env.OPENSEARCH_INDEX_NAME ?? "rag-chunks";
 
 export class AwsSearchStoreProvider implements SearchStoreProvider {
   isEnabled(): boolean {
+    const cloudProvider = (process.env.CLOUD_PROVIDER ?? "azure")
+      .trim()
+      .toLowerCase();
+    const defaultFlag = cloudProvider === "aws" ? "true" : "false";
     return (
-      (process.env.SEARCH_ENABLED ?? "false").toLowerCase() === "true" &&
+      (process.env.SEARCH_ENABLED ?? defaultFlag).toLowerCase() === "true" &&
       Boolean(process.env.OPENSEARCH_ENDPOINT)
     );
   }
