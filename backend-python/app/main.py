@@ -94,16 +94,29 @@ def llm_answer(question: str, snippets: List[str]) -> Optional[str]:
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key or OpenAI is None:
         return None
-    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
-    client = OpenAI(api_key=api_key)
-    context = "\n\n".join(snippets[:5])
-    prompt = (
-        "You are a RAG assistant. Answer using only the provided context. "
-        "If context is insufficient, say so briefly.\n\n"
-        f"Question: {question}\n\nContext:\n{context}"
-    )
-    response = client.responses.create(model=model, input=prompt, max_output_tokens=350)
-    return response.output_text.strip() if getattr(response, "output_text", "") else None
+    
+    try:
+        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
+        client = OpenAI(api_key=api_key)
+        context = "\n\n".join(snippets[:5])
+        
+        system_message = "You are a RAG assistant. Answer using only the provided context. If context is insufficient, say so briefly."
+        
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": f"Question: {question}\n\nContext:\n{context}"}
+            ],
+            max_tokens=350,
+            temperature=0.7
+        )
+        
+        return response.choices[0].message.content.strip() if response.choices else None
+    except Exception as e:
+        import sys
+        print(f"[llm_answer] OpenAI API error: {str(e)}", file=sys.stderr)
+        return None
 
 
 # ---------------------------------------------------------------------------

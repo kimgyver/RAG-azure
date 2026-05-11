@@ -724,67 +724,136 @@ app.post("/api/uploads/confirm", async (req: Request, res: Response) => {
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
 app.post("/api/chat", async (req: Request, res: Response) => {
-  const {
-    tenantId: rawTenant,
-    question,
-    messages = [],
-    sessionId,
-    summaryMemory
-  } = req.body ?? {};
-  const tenantId = String(rawTenant ?? "").trim();
-  if (!tenantId)
-    return res.status(400).json({ message: "tenantId is required." });
-  if (!isTenantAllowed(tenantId))
-    return res.status(403).json({ message: tenantNotAllowedMessage() });
-  if (!question?.trim())
-    return res.status(400).json({ message: "question is required." });
+  try {
+    const {
+      tenantId: rawTenant,
+      question,
+      messages = [],
+      sessionId,
+      summaryMemory
+    } = req.body ?? {};
+    const tenantId = String(rawTenant ?? "").trim();
+    if (!tenantId)
+      return res.status(400).json({ message: "tenantId is required." });
+    if (!isTenantAllowed(tenantId))
+      return res.status(403).json({ message: tenantNotAllowedMessage() });
+    if (!question?.trim())
+      return res.status(400).json({ message: "question is required." });
 
-  const openaiKey = process.env.OPENAI_API_KEY?.trim();
-  const chatModel = process.env.OPENAI_CHAT_MODEL ?? "gpt-4o-mini";
-  const maxCompletionTokens = Number(
-    process.env.MAX_COMPLETION_TOKENS ?? "1000"
-  );
-  const top = Number(process.env.SEARCH_TOP_K ?? "3");
-  const mode = resolveSearchMode(process.env.CHAT_SEARCH_MODE);
+    const openaiKey = process.env.OPENAI_API_KEY?.trim();
+    const chatModel = process.env.OPENAI_CHAT_MODEL ?? "gpt-4o-mini";
+    const maxCompletionTokens = Number(
+      process.env.MAX_COMPLETION_TOKENS ?? "1000"
+    );
+    const top = Number(process.env.SEARCH_TOP_K ?? "3");
+    const mode = resolveSearchMode(process.env.CHAT_SEARCH_MODE);
 
-  let queryEmbedding: number[] | undefined;
-  if (embeddingEnabled() && mode !== "keyword") {
-    queryEmbedding = (await generateEmbedding(question)) ?? undefined;
-  }
+    let queryEmbedding: number[] | undefined;
+    if (embeddingEnabled() && mode !== "keyword") {
+      queryEmbedding = (await generateEmbedding(question)) ?? undefined;
+    }
 
-  const requestedTop = Number.isFinite(top) && top > 0 ? top : 3;
-  const remoteHits = searchStore.isEnabled()
-    ? ((await searchStore.searchChunks(
-        question,
+    const requestedTop = Number.isFinite(top) && top > 0 ? top : 3;
+    let remoteHits: AwsSearchHit[] = [];
+    if (searchStore.isEnabled()) {
+      try {
+        remoteHits = (await searchStore.searchChunks(
+          question,
+          tenantId,
+          requestedTop,
+          queryEmbedding,
+          mode
+        )) as AwsSearchHit[];
+      } catch (error) {
+        console.warn("[chat] OpenSearch search failed, falling back to local search", {
+          tenantId,
+          message: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
+
+    // If OpenSearch is disabled or unavailable, fall back to sourceText chunks from document metadata.
+    const hits =
+      remoteHits.length > 0
+        ? remoteHits
+        : await buildLocalSearchHits(question, tenantId, requestedTop);
+
+    const citations = hits.map(h => ({
+      documentId: h.documentId,
+      fileName: h.fileName,
+      blobName: h.blobName,
+      chunkIndex: h.chunkIndex,
+      snippet: String(h.content ?? "").slice(0, 300),
+      score: h.score
+    }));
+
+    const contextText = hits
+      .map(h => String(h.content ?? ""))
+      .join("\n\n---\n\n");
+
+    if (!openaiKey) {
+      const answer = buildSearchOnlyAnswer(hits);
+      return res.json({
+        answer,
+        citations,
+        memory: {
+          sessionId: sessionId ?? randomUUID(),
+          summary: summaryMemory ?? "",
+          recentTurnsUsed: messages.length
+        },
+        usage: {
+          tenantId,
+          retrievedChunks: hits.length,
+          searchMode: mode,
+          vectorUsed: Boolean(queryEmbedding),
+          fallbackUsed: true,
+          responseChars: answer.length,
+          promptChars: contextText.length,
+          promptCapped: false,
+          latencyMs: 0,
+          maxCompletionTokens
+        }
+      });
+    }
+
+    const systemPrompt = contextText
+      ? `Answer based on the following context:\n\n${contextText}`
+      : "You are a helpful assistant.";
+
+    let answer = "";
+    let completionUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+    let fallbackUsedForChat = false;
+
+    try {
+      const openai = new OpenAI({ apiKey: openaiKey });
+      const chatMessages: OpenAI.ChatCompletionMessageParam[] = [
+        { role: "system", content: systemPrompt },
+        ...(messages as { role: "user" | "assistant"; content: string }[]),
+        { role: "user", content: question }
+      ];
+
+      const completion = await openai.chat.completions.create({
+        model: chatModel,
+        messages: chatMessages,
+        max_tokens: maxCompletionTokens
+      });
+
+      answer = completion.choices[0]?.message?.content ?? "";
+      completionUsage = {
+        prompt_tokens: completion.usage?.prompt_tokens ?? 0,
+        completion_tokens: completion.usage?.completion_tokens ?? 0,
+        total_tokens: completion.usage?.total_tokens ?? 0
+      };
+    } catch (error) {
+      console.warn("[chat] OpenAI API call failed, falling back to search-only", {
         tenantId,
-        requestedTop,
-        queryEmbedding,
-        mode
-      )) as AwsSearchHit[])
-    : [];
+        message: error instanceof Error ? error.message : String(error)
+      });
+      answer = buildSearchOnlyAnswer(hits);
+      fallbackUsedForChat = true;
+    }
 
-  // If OpenSearch is disabled or empty, fall back to sourceText chunks from document metadata.
-  const hits =
-    remoteHits.length > 0
-      ? remoteHits
-      : await buildLocalSearchHits(question, tenantId, requestedTop);
-
-  const citations = hits.map(h => ({
-    documentId: h.documentId,
-    fileName: h.fileName,
-    blobName: h.blobName,
-    chunkIndex: h.chunkIndex,
-    snippet: String(h.content ?? "").slice(0, 300),
-    score: h.score
-  }));
-
-  const contextText = hits
-    .map(h => String(h.content ?? ""))
-    .join("\n\n---\n\n");
-
-  if (!openaiKey) {
-    const answer = buildSearchOnlyAnswer(hits);
-    return res.json({
+    res.json({
       answer,
       citations,
       memory: {
@@ -797,58 +866,23 @@ app.post("/api/chat", async (req: Request, res: Response) => {
         retrievedChunks: hits.length,
         searchMode: mode,
         vectorUsed: Boolean(queryEmbedding),
-        fallbackUsed: true,
+        fallbackUsed: fallbackUsedForChat,
         responseChars: answer.length,
-        promptChars: contextText.length,
+        promptChars: systemPrompt.length,
         promptCapped: false,
         latencyMs: 0,
-        maxCompletionTokens
+        maxCompletionTokens,
+        promptTokenCount: completionUsage.prompt_tokens,
+        completionTokenCount: completionUsage.completion_tokens,
+        totalTokenCount: completionUsage.total_tokens
       }
     });
+  } catch (error) {
+    console.error("[chat] failed to process chat request", {
+      message: error instanceof Error ? error.message : String(error)
+    });
+    res.status(500).json({ message: "Chat request failed." });
   }
-
-  const systemPrompt = contextText
-    ? `Answer based on the following context:\n\n${contextText}`
-    : "You are a helpful assistant.";
-
-  const openai = new OpenAI({ apiKey: openaiKey });
-  const chatMessages: OpenAI.ChatCompletionMessageParam[] = [
-    { role: "system", content: systemPrompt },
-    ...(messages as { role: "user" | "assistant"; content: string }[]),
-    { role: "user", content: question }
-  ];
-
-  const completion = await openai.chat.completions.create({
-    model: chatModel,
-    messages: chatMessages,
-    max_tokens: maxCompletionTokens
-  });
-
-  const answer = completion.choices[0]?.message?.content ?? "";
-  res.json({
-    answer,
-    citations,
-    memory: {
-      sessionId: sessionId ?? randomUUID(),
-      summary: summaryMemory ?? "",
-      recentTurnsUsed: messages.length
-    },
-    usage: {
-      tenantId,
-      retrievedChunks: hits.length,
-      searchMode: mode,
-      vectorUsed: Boolean(queryEmbedding),
-      fallbackUsed: false,
-      responseChars: answer.length,
-      promptChars: systemPrompt.length,
-      promptCapped: false,
-      latencyMs: 0,
-      maxCompletionTokens,
-      promptTokenCount: completion.usage?.prompt_tokens,
-      completionTokenCount: completion.usage?.completion_tokens,
-      totalTokenCount: completion.usage?.total_tokens
-    }
-  });
 });
 
 // ── Error handler ─────────────────────────────────────────────────────────────
