@@ -1,4 +1,5 @@
 import type { FormEvent } from "react";
+import ReactMarkdown from "react-markdown";
 import type {
   BackendTarget,
   ChatMessage,
@@ -68,7 +69,9 @@ export function ChatPanel({
             <span className="message-role">
               {message.role === "user" ? "You" : "Assistant"}
             </span>
-            <p>{message.content}</p>
+            <div className="message-content">
+              <ReactMarkdown>{message.content}</ReactMarkdown>
+            </div>
             {message.citations?.length ? (
               <div className="message-meta">
                 Sources: {message.citations.join(" / ")}

@@ -137,6 +137,7 @@ def flags_deployment() -> Dict[str, Any]:
         "chatSearchMode": os.getenv("CHAT_SEARCH_MODE", "keyword").strip().lower() or "keyword",
         "ocrEnabled": bool_env("OCR_ENABLED", False),
         "openAiChatConfigured": bool(os.getenv("OPENAI_API_KEY", "").strip()),
+        "openAiModelConfigured": bool(os.getenv("OPENAI_MODEL", "").strip()),
         "tenantAllowlistActive": bool(allowed_tenants()),
     }
 

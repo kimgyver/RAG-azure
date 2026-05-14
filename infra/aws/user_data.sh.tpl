@@ -52,7 +52,7 @@ OPENSEARCH_ENDPOINT=${opensearch_endpoint}
 OPENSEARCH_INDEX_NAME=rag-chunks
 SEARCH_ENABLED=true
 ALLOWED_TENANT_IDS=${allowed_tenant_ids}
-OPENAI_API_KEY=$${OPENAI_API_KEY}
+OPENAI_API_KEY=${OPENAI_API_KEY}
 EOF
 
 chmod 600 /opt/ragbackend/.env

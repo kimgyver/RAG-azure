@@ -535,6 +535,81 @@ button:hover {
   justify-self: end;
 }
 
+/* Markdown content styling */
+.message-content {
+  margin: 0;
+  padding: 0;
+}
+
+.message-content p {
+  margin: 0.5rem 0;
+  line-height: 1.6;
+}
+
+.message-content strong {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.message-content em {
+  font-style: italic;
+}
+
+.message-content ul,
+.message-content ol {
+  margin: 0.8rem 0;
+  padding-left: 1.5rem;
+}
+
+.message-content li {
+  margin: 0.3rem 0;
+  line-height: 1.6;
+}
+
+.message-content code {
+  background: rgba(24, 32, 29, 0.08);
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.9em;
+}
+
+.message-content pre {
+  background: rgba(24, 32, 29, 0.08);
+  padding: 1rem;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 0.8rem 0;
+}
+
+.message-content pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+}
+
+.message-content h1,
+.message-content h2,
+.message-content h3,
+.message-content h4,
+.message-content h5,
+.message-content h6 {
+  margin: 0.8rem 0 0.4rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.message-content a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-soft);
+  transition: color 180ms ease;
+}
+
+.message-content a:hover {
+  color: var(--gold);
+}
+
 .chat-composer {
   padding: 1rem;
 }
